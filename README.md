@@ -1,5 +1,7 @@
 # NoFences
 
+<img width="1157" height="379" alt="image" src="https://github.com/user-attachments/assets/92870706-d0c0-41dd-ab18-dec26a30b383" />
+
 ## Features
 
 - **Fences**: Drag files and folders from the desktop into resizable, translucent fences. Double-click an item to open it.
