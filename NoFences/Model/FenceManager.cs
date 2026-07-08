@@ -70,14 +70,24 @@ namespace NoFences.Model
 
         public void CreateFence(string name)
         {
+            CreateFence(name, 0);
+        }
+
+        public void CreateFence(string name, int fenceType)
+        {
             var fenceInfo = new FenceInfo(Guid.NewGuid())
             {
                 Name = name,
                 PosX = 100,
                 PosY = 250,
-                Height = 300,
-                Width = 300
+                Height = fenceType == 0 ? 300 : (fenceType == 1 ? 250 : (fenceType == 4 ? 300 : 180)),
+                Width = fenceType == 0 ? 300 : 280,
+                FenceType = fenceType
             };
+
+            // Sticky notes get a classic yellow-ish tint by default.
+            if (fenceType == 1)
+                fenceInfo.CustomColor = "#6B5900";
 
             UpdateFence(fenceInfo);
             ShowFence(fenceInfo);
@@ -118,14 +128,16 @@ namespace NoFences.Model
             foreach (var window in windows)
             {
                 var info = window.FenceInfo;
-                if (!string.IsNullOrEmpty(info.TargetFolder))
+                if (info.FenceType != 0 || !string.IsNullOrEmpty(info.TargetFolder))
                     continue;
                 if (!Util.WildcardMatcher.MatchesAny(info.AutoSortPatterns, fileName))
                     continue;
-                if (info.Files.Contains(path))
+                if (info.EnumerateAllFiles().Contains(path))
                     return;
 
-                info.Files.Add(path);
+                // With tabs, auto-sorted items land in the first tab.
+                var target = info.Tabs.Count > 0 ? info.Tabs[0].Files : info.Files;
+                target.Add(path);
                 UpdateFence(info);
                 Util.DesktopIconHider.HideIfEnabled(path);
                 window.NotifyItemAdded(path);

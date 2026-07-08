@@ -22,6 +22,10 @@ Didn't want to pay 11€, made my own.
 - **New-item highlight**: Freshly added items glow golden for a few seconds so you can see what the auto-sort rules did.
 - **Portal navigation**: Double-click a folder inside a portal to browse into it; the ".." tile goes back up.
 - **Layout backup**: Export/import all fences as a single XML file from the tray menu.
+- **Tabs**: Split a fence into tabs (right-click → *Tabs* → *Add tab…*), e.g. "Steam | Emulators | VR | Launchers". Click to switch, drag an item onto a tab header to move it there, "+" in the strip adds another tab.
+- **Sticky notes**: Tray → *New widget* → *Sticky note* creates a fence you can type into; the text saves automatically.
+- **Widgets**: Tray → *New widget* → *Clock*, *CPU & RAM* or *Calendar* — small always-on-desktop panels sharing all fence styling (color, opacity, lock, snapping).
+- **Animations**: Fences fade in on startup, scale down subtly while being dragged and bounce back on release; hovered items get a soft glow.
 - **Tray icon**: Create fences, toggle quick-hide, run the sort rules or exit — all from the notification area.
 - **Hide fenced items on desktop** (tray option): Files inside a fence get the Hidden attribute so Explorer no longer shows them on the desktop — no more duplicate icons. Removing an item from its fence (or deleting the fence) makes it visible again.
 - **Start with Windows** (tray option): Toggles an autostart entry for the current user.

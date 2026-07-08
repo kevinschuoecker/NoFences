@@ -20,6 +20,13 @@ namespace NoFences
         {
             var menu = new ContextMenuStrip();
             menu.Items.Add("New fence", null, (s, e) => FenceManager.Instance.CreateFence("New fence"));
+
+            var widgetMenu = new ToolStripMenuItem("New widget");
+            widgetMenu.DropDownItems.Add("Sticky note", null, (s, e) => FenceManager.Instance.CreateFence("Note", 1));
+            widgetMenu.DropDownItems.Add("Clock", null, (s, e) => FenceManager.Instance.CreateFence("Clock", 2));
+            widgetMenu.DropDownItems.Add("CPU && RAM", null, (s, e) => FenceManager.Instance.CreateFence("System", 3));
+            widgetMenu.DropDownItems.Add("Calendar", null, (s, e) => FenceManager.Instance.CreateFence("Calendar", 4));
+            menu.Items.Add(widgetMenu);
             menu.Items.Add("Show/hide all fences  (Ctrl+Alt+H)", null, (s, e) => FenceManager.Instance.ToggleAllFences());
             menu.Items.Add("Sort desktop now", null, (s, e) => DesktopAutoSorter.ApplyRulesNow());
             menu.Items.Add(new ToolStripSeparator());

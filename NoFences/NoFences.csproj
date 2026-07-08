@@ -67,6 +67,7 @@
     </Compile>
     <Compile Include="Model\AppSettings.cs" />
     <Compile Include="Model\EntryType.cs" />
+    <Compile Include="Model\FenceTab.cs" />
     <Compile Include="Model\FenceEntry.cs" />
     <Compile Include="Model\FenceInfo.cs" />
     <Compile Include="Model\FenceManager.cs" />
