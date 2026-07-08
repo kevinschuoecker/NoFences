@@ -23,6 +23,32 @@ namespace NoFences
             menu.Items.Add("Show/hide all fences  (Ctrl+Alt+H)", null, (s, e) => FenceManager.Instance.ToggleAllFences());
             menu.Items.Add("Sort desktop now", null, (s, e) => DesktopAutoSorter.ApplyRulesNow());
             menu.Items.Add(new ToolStripSeparator());
+
+            var hideFencedItem = new ToolStripMenuItem("Hide fenced items on desktop")
+            {
+                CheckOnClick = true,
+                Checked = FenceManager.Instance.Settings.HideFencedDesktopItems
+            };
+            hideFencedItem.Click += (s, e) =>
+            {
+                FenceManager.Instance.Settings.HideFencedDesktopItems = hideFencedItem.Checked;
+                FenceManager.Instance.SaveSettings();
+                if (hideFencedItem.Checked)
+                    DesktopIconHider.HideAllFenced();
+                else
+                    DesktopIconHider.UnhideAllFenced();
+            };
+            menu.Items.Add(hideFencedItem);
+
+            var autostartItem = new ToolStripMenuItem("Start with Windows")
+            {
+                CheckOnClick = true,
+                Checked = AutostartUtil.IsEnabled
+            };
+            autostartItem.Click += (s, e) => AutostartUtil.SetEnabled(autostartItem.Checked);
+            menu.Items.Add(autostartItem);
+
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Exit", null, (s, e) => Application.Exit());
 
             notifyIcon = new NotifyIcon

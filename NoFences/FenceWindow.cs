@@ -359,6 +359,9 @@ namespace NoFences
         {
             if (MessageBox.Show(this, "Really remove this fence?", "Remove", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
+                // Give the desktop its icons back before the fence disappears.
+                foreach (var file in fenceInfo.Files)
+                    DesktopIconHider.Unhide(file);
                 FenceManager.Instance.RemoveFence(fenceInfo);
                 Close();
             }
@@ -374,6 +377,7 @@ namespace NoFences
             if (path == null)
                 return;
             fenceInfo.Files.Remove(path);
+            DesktopIconHider.Unhide(path);
             hoveringItem = null;
             Save();
             Refresh();
@@ -425,8 +429,13 @@ namespace NoFences
             }
 
             foreach (var file in dropped)
+            {
                 if (!fenceInfo.Files.Contains(file) && ItemExists(file))
+                {
                     fenceInfo.Files.Add(file);
+                    DesktopIconHider.HideIfEnabled(file);
+                }
+            }
             Save();
             Refresh();
         }

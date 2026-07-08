@@ -19,10 +19,38 @@ namespace NoFences.Model
 
         public bool AllFencesHidden { get; private set; }
 
+        public AppSettings Settings { get; private set; } = new AppSettings();
+
         public FenceManager()
         {
             basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoFences");
             EnsureDirectoryExists(basePath);
+            LoadSettings();
+        }
+
+        private string SettingsFile => Path.Combine(basePath, "settings.xml");
+
+        private void LoadSettings()
+        {
+            try
+            {
+                if (!File.Exists(SettingsFile))
+                    return;
+                var serializer = new XmlSerializer(typeof(AppSettings));
+                using (var reader = new StreamReader(SettingsFile))
+                    Settings = (AppSettings)serializer.Deserialize(reader);
+            }
+            catch
+            {
+                Settings = new AppSettings();
+            }
+        }
+
+        public void SaveSettings()
+        {
+            var serializer = new XmlSerializer(typeof(AppSettings));
+            using (var writer = new StreamWriter(SettingsFile))
+                serializer.Serialize(writer, Settings);
         }
 
         public void LoadFences()
@@ -98,6 +126,7 @@ namespace NoFences.Model
 
                 info.Files.Add(path);
                 UpdateFence(info);
+                Util.DesktopIconHider.HideIfEnabled(path);
                 window.Invalidate();
                 return;
             }

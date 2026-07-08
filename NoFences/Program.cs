@@ -32,6 +32,10 @@ namespace NoFences
 
                     DesktopAutoSorter.Start();
 
+                    // Re-apply hiding in case files were added to fences while the app was not running.
+                    if (FenceManager.Instance.Settings.HideFencedDesktopItems)
+                        DesktopIconHider.HideAllFenced();
+
                     using (new TrayIconHost())
                     {
                         Application.Run();
