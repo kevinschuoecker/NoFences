@@ -1,9 +1,5 @@
 # NoFences
 
-Didn't want to pay 11€, made my own.
-
-![Screenshot](screenshot.png "NoFences in action")
-
 ## Features
 
 - **Fences**: Drag files and folders from the desktop into resizable, translucent fences. Double-click an item to open it.
