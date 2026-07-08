@@ -13,6 +13,8 @@ Didn't want to pay 11€, made my own.
 - **Folder portals**: Right-click → *Folder portal…* to mirror a real folder (e.g. Downloads or a cloud-synced folder) live inside a fence. Dropping files onto a portal moves them into that folder.
 - **Auto-sort rules**: Right-click → *Auto-sort rules…* and enter wildcard patterns like `*.png; screenshot*`. New files appearing on the desktop that match are added to the fence automatically. *Sort desktop now* applies the rules to existing desktop files.
 - **Icon sizes**: Choose small (32), medium (48) or large (64) icons per fence for easier viewing.
+- **Search**: Right-click → *Search in fence…* opens a filter box in the title bar; typing narrows the visible items (Esc closes).
+- **Scrollbar**: Fences with more content than fits get a proportional, draggable scrollbar (mouse wheel works too).
 - **Tray icon**: Create fences, toggle quick-hide, run the sort rules or exit — all from the notification area.
 - **Hide fenced items on desktop** (tray option): Files inside a fence get the Hidden attribute so Explorer no longer shows them on the desktop — no more duplicate icons. Removing an item from its fence (or deleting the fence) makes it visible again.
 - **Start with Windows** (tray option): Toggles an autostart entry for the current user.

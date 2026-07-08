@@ -50,6 +50,14 @@ namespace NoFences
         private int scrollHeight;
         private int scrollOffset;
 
+        private bool isDraggingScrollbar;
+        private int scrollDragStartY;
+        private int scrollDragStartOffset;
+
+        private TextBox searchBox;
+
+        private string SearchQuery => (searchBox != null && searchBox.Visible) ? searchBox.Text.Trim() : "";
+
         private readonly ThrottledExecution throttledMove = new ThrottledExecution(TimeSpan.FromSeconds(4));
         private readonly ThrottledExecution throttledResize = new ThrottledExecution(TimeSpan.FromSeconds(4));
 
@@ -99,8 +107,66 @@ namespace NoFences
             ApplyCustomColor();
             BuildExtraMenuItems();
             SetupPortalWatcher();
+            InitSearchBox();
+
+            this.MouseDown += FenceWindow_MouseDown;
+            this.MouseUp += FenceWindow_MouseUp;
 
             Minify();
+        }
+
+        private void InitSearchBox()
+        {
+            searchBox = new TextBox
+            {
+                Visible = false,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.FromArgb(30, 30, 30),
+                ForeColor = Color.White,
+                Font = iconFont,
+                Width = LogicalToDeviceUnits(140)
+            };
+            searchBox.TextChanged += (s, e) =>
+            {
+                scrollOffset = 0;
+                Invalidate();
+            };
+            searchBox.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Escape)
+                {
+                    CloseSearch();
+                    e.Handled = true;
+                }
+            };
+            Controls.Add(searchBox);
+            PositionSearchBox();
+        }
+
+        private void PositionSearchBox()
+        {
+            searchBox.Location = new Point(Width - searchBox.Width - LogicalToDeviceUnits(8),
+                Math.Max(2, (titleHeight - searchBox.Height) / 2));
+        }
+
+        private void ToggleSearch()
+        {
+            if (searchBox.Visible)
+            {
+                CloseSearch();
+                return;
+            }
+            PositionSearchBox();
+            searchBox.Visible = true;
+            searchBox.Focus();
+            Invalidate();
+        }
+
+        private void CloseSearch()
+        {
+            searchBox.Text = "";
+            searchBox.Visible = false;
+            Invalidate();
         }
 
         private void ApplyIconSize()
@@ -135,6 +201,9 @@ namespace NoFences
         {
             var insertAt = appContextMenu.Items.IndexOf(toolStripSeparator1);
 
+            var searchItem = new ToolStripMenuItem("Search in fence...");
+            searchItem.Click += (s, e) => ToggleSearch();
+
             var colorItem = new ToolStripMenuItem("Fence color...");
             colorItem.Click += (s, e) => PickColor();
 
@@ -162,14 +231,15 @@ namespace NoFences
             var hideAllItem = new ToolStripMenuItem("Hide all fences  (Ctrl+Alt+H)");
             hideAllItem.Click += (s, e) => FenceManager.Instance.ToggleAllFences();
 
-            appContextMenu.Items.Insert(insertAt, colorItem);
-            appContextMenu.Items.Insert(insertAt + 1, resetColorItem);
-            appContextMenu.Items.Insert(insertAt + 2, iconSizeItem);
-            appContextMenu.Items.Insert(insertAt + 3, portalMenuItem);
-            appContextMenu.Items.Insert(insertAt + 4, rulesItem);
-            appContextMenu.Items.Insert(insertAt + 5, sortNowItem);
-            appContextMenu.Items.Insert(insertAt + 6, new ToolStripSeparator());
-            appContextMenu.Items.Insert(insertAt + 7, hideAllItem);
+            appContextMenu.Items.Insert(insertAt, searchItem);
+            appContextMenu.Items.Insert(insertAt + 1, colorItem);
+            appContextMenu.Items.Insert(insertAt + 2, resetColorItem);
+            appContextMenu.Items.Insert(insertAt + 3, iconSizeItem);
+            appContextMenu.Items.Insert(insertAt + 4, portalMenuItem);
+            appContextMenu.Items.Insert(insertAt + 5, rulesItem);
+            appContextMenu.Items.Insert(insertAt + 6, sortNowItem);
+            appContextMenu.Items.Insert(insertAt + 7, new ToolStripSeparator());
+            appContextMenu.Items.Insert(insertAt + 8, hideAllItem);
         }
 
         private void PickColor()
@@ -332,11 +402,14 @@ namespace NoFences
 
                 var pt = PointToClient(new Point(m.LParam.ToInt32()));
 
-                if ((int)m.Result == HTCLIENT && pt.Y < titleHeight)     // drag the form
+                if ((int)m.Result == HTCLIENT && pt.Y < titleHeight && !(searchBox != null && searchBox.Visible && searchBox.Bounds.Contains(pt)))     // drag the form
                 {
                     m.Result = (IntPtr)HTCAPTION;
                     FenceWindow_MouseEnter(null, null);
                 }
+
+                // The scrollbar lives on the right edge; don't let the resize grip eat its clicks.
+                var overScrollbar = scrollHeight > 0 && pt.X >= Width - 14 && pt.Y > titleHeight + 10 && pt.Y < Height - 10;
 
                 if (pt.X < 10 && pt.Y < 10)
                     m.Result = new IntPtr(HTTOPLEFT);
@@ -350,7 +423,7 @@ namespace NoFences
                     m.Result = new IntPtr(HTBOTTOM);
                 else if (pt.X < 10)
                     m.Result = new IntPtr(HTLEFT);
-                else if (pt.X > (Width - 10))
+                else if (pt.X > (Width - 10) && !overScrollbar)
                     m.Result = new IntPtr(HTRIGHT);
             }
         }
@@ -442,6 +515,9 @@ namespace NoFences
 
         private void FenceWindow_Resize(object sender, EventArgs e)
         {
+            if (searchBox != null)
+                PositionSearchBox();
+
             throttledResize.Run(() =>
             {
                 fenceInfo.Width = Width;
@@ -454,6 +530,15 @@ namespace NoFences
 
         private void FenceWindow_MouseMove(object sender, MouseEventArgs e)
         {
+            if (isDraggingScrollbar)
+            {
+                var dragRange = ScrollbarTrackRect.Height - ScrollbarThumbRect.Height;
+                if (dragRange > 0)
+                {
+                    scrollOffset = scrollDragStartOffset + (e.Y - scrollDragStartY) * scrollHeight / dragRange;
+                    ClampScrollOffset();
+                }
+            }
             Refresh();
         }
 
@@ -475,6 +560,9 @@ namespace NoFences
 
         private void Minify()
         {
+            // Don't roll up while the user is searching.
+            if (searchBox != null && searchBox.Visible)
+                return;
             if (minifyToolStripMenuItem.Checked && !isMinified)
             {
                 isMinified = true;
@@ -526,10 +614,14 @@ namespace NoFences
             var y = itemPadding;
             scrollHeight = 0;
             e.Graphics.Clip = new Region(new Rectangle(0, titleHeight, Width, Height - titleHeight));
+            var query = SearchQuery;
             foreach (var file in CurrentFiles())
             {
                 var entry = FenceEntry.FromPath(file);
                 if (entry == null)
+                    continue;
+
+                if (query.Length > 0 && entry.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
 
                 RenderEntry(e.Graphics, entry, x, y + titleHeight - scrollOffset);
@@ -548,14 +640,17 @@ namespace NoFences
 
             scrollHeight -= (ClientRectangle.Height - titleHeight);
 
-            // Scroll bars
+            // Scroll bar (proportional, draggable thumb)
             if (scrollHeight > 0)
             {
-                var contentHeight = Height - titleHeight;
-                var scrollbarHeight = contentHeight - scrollHeight;
-                e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(150, Color.Black)), new Rectangle(Width - 5, titleHeight + scrollOffset, 5, scrollbarHeight));
-
                 scrollOffset = Math.Min(scrollOffset, scrollHeight);
+                e.Graphics.Clip = new Region(ClientRectangle);
+                e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(40, Color.White)), ScrollbarTrackRect);
+                e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(isDraggingScrollbar ? 200 : 120, Color.White)), ScrollbarThumbRect);
+            }
+            else
+            {
+                scrollOffset = 0;
             }
 
 
@@ -734,13 +829,71 @@ namespace NoFences
             if (scrollHeight < 1)
                 return;
 
-            scrollOffset -= Math.Sign(e.Delta) * 10;
+            scrollOffset -= Math.Sign(e.Delta) * 36;
+            ClampScrollOffset();
+            Invalidate();
+        }
+
+        private void ClampScrollOffset()
+        {
             if (scrollOffset < 0)
                 scrollOffset = 0;
             if (scrollOffset > scrollHeight)
                 scrollOffset = scrollHeight;
+        }
 
-            Invalidate();
+        private Rectangle ScrollbarTrackRect => new Rectangle(Width - 10, titleHeight + 2, 7, Height - titleHeight - 4);
+
+        private Rectangle ScrollbarThumbRect
+        {
+            get
+            {
+                var track = ScrollbarTrackRect;
+                var viewport = Height - titleHeight;
+                var total = scrollHeight + viewport;
+                var thumbHeight = Math.Max(24, track.Height * viewport / Math.Max(1, total));
+                var y = track.Y + (int)((long)(track.Height - thumbHeight) * scrollOffset / Math.Max(1, scrollHeight));
+                return new Rectangle(track.X, y, track.Width, thumbHeight);
+            }
+        }
+
+        private void FenceWindow_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left || scrollHeight < 1)
+                return;
+
+            var thumb = ScrollbarThumbRect;
+            var track = ScrollbarTrackRect;
+
+            if (!thumb.Contains(e.Location) && track.Contains(e.Location))
+            {
+                // Jump so the thumb centers on the click, then keep dragging from there.
+                var dragRange = track.Height - thumb.Height;
+                if (dragRange > 0)
+                {
+                    scrollOffset = (e.Y - track.Y - thumb.Height / 2) * scrollHeight / dragRange;
+                    ClampScrollOffset();
+                }
+                thumb = ScrollbarThumbRect;
+                Invalidate();
+            }
+
+            if (thumb.Contains(e.Location))
+            {
+                isDraggingScrollbar = true;
+                scrollDragStartY = e.Y;
+                scrollDragStartOffset = scrollOffset;
+                Invalidate();
+            }
+        }
+
+        private void FenceWindow_MouseUp(object sender, MouseEventArgs e)
+        {
+            if (isDraggingScrollbar)
+            {
+                isDraggingScrollbar = false;
+                Invalidate();
+            }
         }
 
         private void ThumbnailProvider_IconThumbnailLoaded(object sender, EventArgs e)
