@@ -31,19 +31,19 @@ namespace NoFences.Model
             else return null;
         }
 
-        public Icon ExtractIcon(ThumbnailProvider thumbnailProvider)
+        public Icon ExtractIcon(ThumbnailProvider thumbnailProvider, int size)
         {
+            if (Type == EntryType.File && thumbnailProvider.IsSupported(Path))
+                return thumbnailProvider.GenerateThumbnail(Path, size);
+
+            var shellIcon = IconUtil.GetShellIcon(Path, size);
+            if (shellIcon != null)
+                return shellIcon;
+
             if (Type == EntryType.File)
-            {
-                if (thumbnailProvider.IsSupported(Path))
-                    return thumbnailProvider.GenerateThumbnail(Path);
-                else
-                    return Icon.ExtractAssociatedIcon(Path);
-            }
-            else
-            {
-                return IconUtil.FolderLarge;
-            }
+                return Icon.ExtractAssociatedIcon(Path);
+
+            return IconUtil.FolderLarge;
         }
 
         public void Open()

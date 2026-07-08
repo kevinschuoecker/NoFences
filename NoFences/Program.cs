@@ -1,4 +1,5 @@
 ﻿using NoFences.Model;
+using NoFences.Util;
 using System;
 using System.Threading;
 using System.Windows.Forms;
@@ -29,7 +30,12 @@ namespace NoFences
                     if (Application.OpenForms.Count == 0)
                         FenceManager.Instance.CreateFence("First fence");
 
-                    Application.Run();
+                    DesktopAutoSorter.Start();
+
+                    using (new TrayIconHost())
+                    {
+                        Application.Run();
+                    }
                 }
             }
         }

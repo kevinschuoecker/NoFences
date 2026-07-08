@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
 
@@ -11,6 +12,12 @@ namespace NoFences.Model
         private const string MetaFileName = "__fence_metadata.xml";
 
         private readonly string basePath;
+
+        private readonly List<FenceWindow> windows = new List<FenceWindow>();
+
+        public IReadOnlyList<FenceWindow> Windows => windows;
+
+        public bool AllFencesHidden { get; private set; }
 
         public FenceManager()
         {
@@ -28,7 +35,7 @@ namespace NoFences.Model
                 var fence = serializer.Deserialize(reader) as FenceInfo;
                 reader.Close();
 
-                new FenceWindow(fence).Show();
+                ShowFence(fence);
             }
         }
 
@@ -44,7 +51,56 @@ namespace NoFences.Model
             };
 
             UpdateFence(fenceInfo);
-            new FenceWindow(fenceInfo).Show();
+            ShowFence(fenceInfo);
+        }
+
+        private void ShowFence(FenceInfo fenceInfo)
+        {
+            var window = new FenceWindow(fenceInfo);
+            windows.Add(window);
+            window.FormClosed += (s, e) => windows.Remove(window);
+            window.Show();
+            if (AllFencesHidden)
+                window.Hide();
+        }
+
+        /// <summary>
+        /// Quick-hide: toggles the visibility of every fence at once.
+        /// </summary>
+        public void ToggleAllFences()
+        {
+            AllFencesHidden = !AllFencesHidden;
+            foreach (var window in windows)
+            {
+                if (AllFencesHidden)
+                    window.Hide();
+                else
+                    window.Show();
+            }
+        }
+
+        /// <summary>
+        /// Adds a file to the first fence whose auto-sort patterns match it.
+        /// Must be called on the UI thread.
+        /// </summary>
+        public void TryAutoSort(string path)
+        {
+            var fileName = Path.GetFileName(path);
+            foreach (var window in windows)
+            {
+                var info = window.FenceInfo;
+                if (!string.IsNullOrEmpty(info.TargetFolder))
+                    continue;
+                if (!Util.WildcardMatcher.MatchesAny(info.AutoSortPatterns, fileName))
+                    continue;
+                if (info.Files.Contains(path))
+                    return;
+
+                info.Files.Add(path);
+                UpdateFence(info);
+                window.Invalidate();
+                return;
+            }
         }
 
         public void RemoveFence(FenceInfo info)
