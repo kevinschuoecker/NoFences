@@ -23,6 +23,9 @@ namespace NoFences
             menu.Items.Add("Show/hide all fences  (Ctrl+Alt+H)", null, (s, e) => FenceManager.Instance.ToggleAllFences());
             menu.Items.Add("Sort desktop now", null, (s, e) => DesktopAutoSorter.ApplyRulesNow());
             menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Export layout...", null, (s, e) => ExportLayout());
+            menu.Items.Add("Import layout...", null, (s, e) => ImportLayout());
+            menu.Items.Add(new ToolStripSeparator());
 
             var hideFencedItem = new ToolStripMenuItem("Hide fenced items on desktop")
             {
@@ -61,6 +64,54 @@ namespace NoFences
             notifyIcon.DoubleClick += (s, e) => FenceManager.Instance.ToggleAllFences();
 
             hotkeyWindow = new HotkeyWindow(() => FenceManager.Instance.ToggleAllFences());
+        }
+
+        private static void ExportLayout()
+        {
+            using (var dialog = new SaveFileDialog
+            {
+                Filter = "NoFences layout (*.xml)|*.xml",
+                FileName = "NoFences-layout.xml",
+                Title = "Export fence layout"
+            })
+            {
+                if (dialog.ShowDialog() != DialogResult.OK)
+                    return;
+                try
+                {
+                    FenceManager.Instance.ExportLayout(dialog.FileName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Export failed: " + ex.Message, "NoFences", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private static void ImportLayout()
+        {
+            using (var dialog = new OpenFileDialog
+            {
+                Filter = "NoFences layout (*.xml)|*.xml",
+                Title = "Import fence layout"
+            })
+            {
+                if (dialog.ShowDialog() != DialogResult.OK)
+                    return;
+
+                if (MessageBox.Show("Importing replaces ALL current fences with the ones from the file. Continue?",
+                        "Import layout", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    return;
+
+                try
+                {
+                    FenceManager.Instance.ImportLayout(dialog.FileName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Import failed: " + ex.Message, "NoFences", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
         }
 
         private static Icon LoadAppIcon()

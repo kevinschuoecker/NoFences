@@ -42,6 +42,16 @@ namespace NoFences.Model
         public string CustomColor { get; set; } = "";
 
         /// <summary>
+        /// Gets or sets the background opacity in percent (0-100).
+        /// </summary>
+        public int Transparency { get; set; } = 40;
+
+        /// <summary>
+        /// Gets or sets the display order: 0 = manual, 1 = by name, 2 = by type, 3 = by date.
+        /// </summary>
+        public int SortMode { get; set; }
+
+        /// <summary>
         /// Gets or sets the logical icon size (32, 48 or 64).
         /// </summary>
         public int IconSize { get; set; } = 32;

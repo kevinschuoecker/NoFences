@@ -15,6 +15,13 @@ Didn't want to pay 11€, made my own.
 - **Icon sizes**: Choose small (32), medium (48) or large (64) icons per fence for easier viewing.
 - **Search**: Right-click → *Search in fence…* opens a filter box in the title bar; typing narrows the visible items (Esc closes).
 - **Scrollbar**: Fences with more content than fits get a proportional, draggable scrollbar (mouse wheel works too).
+- **Sorting**: Per fence, display items manually or sorted by name, type or date (right-click → *Sort items*).
+- **Background opacity**: Per fence, choose how strongly the background tint shows (right-click → *Background opacity*).
+- **Move items between fences**: Drag an icon from one fence and drop it into another; the desktop-hidden state moves along.
+- **Snapping**: When you finish moving a fence, its edges snap to nearby fences and the screen edges.
+- **New-item highlight**: Freshly added items glow golden for a few seconds so you can see what the auto-sort rules did.
+- **Portal navigation**: Double-click a folder inside a portal to browse into it; the ".." tile goes back up.
+- **Layout backup**: Export/import all fences as a single XML file from the tray menu.
 - **Tray icon**: Create fences, toggle quick-hide, run the sort rules or exit — all from the notification area.
 - **Hide fenced items on desktop** (tray option): Files inside a fence get the Hidden attribute so Explorer no longer shows them on the desktop — no more duplicate icons. Removing an item from its fence (or deleting the fence) makes it visible again.
 - **Start with Windows** (tray option): Toggles an autostart entry for the current user.

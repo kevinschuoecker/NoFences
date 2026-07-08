@@ -58,6 +58,20 @@ namespace NoFences
 
         private string SearchQuery => (searchBox != null && searchBox.Visible) ? searchBox.Text.Trim() : "";
 
+        // Transient navigation inside a folder portal (null = portal root).
+        private string portalCurrentPath;
+
+        private string CurrentPortalFolder => portalCurrentPath ?? fenceInfo.TargetFolder;
+
+        // Items added recently get a short visual highlight.
+        private readonly Dictionary<string, DateTime> recentItems = new Dictionary<string, DateTime>();
+        private readonly Timer highlightTimer = new Timer { Interval = 500 };
+
+        // Drag & drop of items out of this fence.
+        private string pendingDragItem;
+        private Point dragStartPoint;
+        private const string FenceItemDragFormat = "NoFencesItem";
+
         private readonly ThrottledExecution throttledMove = new ThrottledExecution(TimeSpan.FromSeconds(4));
         private readonly ThrottledExecution throttledResize = new ThrottledExecution(TimeSpan.FromSeconds(4));
 
@@ -111,8 +125,46 @@ namespace NoFences
 
             this.MouseDown += FenceWindow_MouseDown;
             this.MouseUp += FenceWindow_MouseUp;
+            this.ResizeEnd += (s, e) => SnapToNeighbors();
+
+            highlightTimer.Tick += (s, e) =>
+            {
+                var cutoff = DateTime.Now.AddSeconds(-8);
+                foreach (var key in recentItems.Where(kv => kv.Value < cutoff).Select(kv => kv.Key).ToList())
+                    recentItems.Remove(key);
+                if (recentItems.Count == 0)
+                    highlightTimer.Stop();
+                Invalidate();
+            };
 
             Minify();
+        }
+
+        /// <summary>Marks an item as freshly added so it gets a short highlight.</summary>
+        public void NotifyItemAdded(string path)
+        {
+            recentItems[path] = DateTime.Now;
+            highlightTimer.Start();
+            Invalidate();
+        }
+
+        private void NavigateInto(string folder)
+        {
+            portalCurrentPath = folder;
+            scrollOffset = 0;
+            SetupPortalWatcher();
+            Invalidate();
+        }
+
+        private void NavigateUp()
+        {
+            var parent = Path.GetDirectoryName(CurrentPortalFolder);
+            portalCurrentPath = (parent == null || string.Equals(parent, fenceInfo.TargetFolder, StringComparison.OrdinalIgnoreCase))
+                ? null
+                : parent;
+            scrollOffset = 0;
+            SetupPortalWatcher();
+            Invalidate();
         }
 
         private void InitSearchBox()
@@ -196,6 +248,11 @@ namespace NoFences
         private ToolStripMenuItem smallIconsMenuItem;
         private ToolStripMenuItem mediumIconsMenuItem;
         private ToolStripMenuItem largeIconsMenuItem;
+        private ToolStripMenuItem sortMenuItem;
+        private ToolStripMenuItem opacityMenuItem;
+
+        private static readonly string[] SortModeNames = { "Manual order", "By name", "By type", "By date" };
+        private static readonly int[] OpacityValues = { 15, 30, 40, 55, 70, 85 };
 
         private void BuildExtraMenuItems()
         {
@@ -219,6 +276,24 @@ namespace NoFences
             var iconSizeItem = new ToolStripMenuItem("Icon size");
             iconSizeItem.DropDownItems.AddRange(new ToolStripItem[] { smallIconsMenuItem, mediumIconsMenuItem, largeIconsMenuItem });
 
+            sortMenuItem = new ToolStripMenuItem("Sort items");
+            for (var i = 0; i < SortModeNames.Length; i++)
+            {
+                var mode = i;
+                var item = new ToolStripMenuItem(SortModeNames[i]);
+                item.Click += (s, e) => SetSortMode(mode);
+                sortMenuItem.DropDownItems.Add(item);
+            }
+
+            opacityMenuItem = new ToolStripMenuItem("Background opacity");
+            foreach (var value in OpacityValues)
+            {
+                var percent = value;
+                var item = new ToolStripMenuItem(percent + " %");
+                item.Click += (s, e) => SetOpacity(percent);
+                opacityMenuItem.DropDownItems.Add(item);
+            }
+
             portalMenuItem = new ToolStripMenuItem("Folder portal...");
             portalMenuItem.Click += (s, e) => ConfigurePortal();
 
@@ -232,14 +307,30 @@ namespace NoFences
             hideAllItem.Click += (s, e) => FenceManager.Instance.ToggleAllFences();
 
             appContextMenu.Items.Insert(insertAt, searchItem);
-            appContextMenu.Items.Insert(insertAt + 1, colorItem);
-            appContextMenu.Items.Insert(insertAt + 2, resetColorItem);
-            appContextMenu.Items.Insert(insertAt + 3, iconSizeItem);
-            appContextMenu.Items.Insert(insertAt + 4, portalMenuItem);
-            appContextMenu.Items.Insert(insertAt + 5, rulesItem);
-            appContextMenu.Items.Insert(insertAt + 6, sortNowItem);
-            appContextMenu.Items.Insert(insertAt + 7, new ToolStripSeparator());
-            appContextMenu.Items.Insert(insertAt + 8, hideAllItem);
+            appContextMenu.Items.Insert(insertAt + 1, sortMenuItem);
+            appContextMenu.Items.Insert(insertAt + 2, colorItem);
+            appContextMenu.Items.Insert(insertAt + 3, resetColorItem);
+            appContextMenu.Items.Insert(insertAt + 4, opacityMenuItem);
+            appContextMenu.Items.Insert(insertAt + 5, iconSizeItem);
+            appContextMenu.Items.Insert(insertAt + 6, portalMenuItem);
+            appContextMenu.Items.Insert(insertAt + 7, rulesItem);
+            appContextMenu.Items.Insert(insertAt + 8, sortNowItem);
+            appContextMenu.Items.Insert(insertAt + 9, new ToolStripSeparator());
+            appContextMenu.Items.Insert(insertAt + 10, hideAllItem);
+        }
+
+        private void SetSortMode(int mode)
+        {
+            fenceInfo.SortMode = mode;
+            Save();
+            Refresh();
+        }
+
+        private void SetOpacity(int percent)
+        {
+            fenceInfo.Transparency = percent;
+            Save();
+            Refresh();
         }
 
         private void PickColor()
@@ -315,17 +406,30 @@ namespace NoFences
             portalFiles = null;
 
             if (!IsPortal)
-                return;
-
-            portalWatcher = new FileSystemWatcher(fenceInfo.TargetFolder)
             {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
-                EnableRaisingEvents = true
-            };
-            FileSystemEventHandler refresh = (s, e) => BeginInvoke((Action)RefreshPortal);
-            portalWatcher.Created += refresh;
-            portalWatcher.Deleted += refresh;
-            portalWatcher.Renamed += (s, e) => BeginInvoke((Action)RefreshPortal);
+                portalCurrentPath = null;
+                return;
+            }
+
+            if (portalCurrentPath != null && !Directory.Exists(portalCurrentPath))
+                portalCurrentPath = null;
+
+            try
+            {
+                portalWatcher = new FileSystemWatcher(CurrentPortalFolder)
+                {
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
+                    EnableRaisingEvents = true
+                };
+                FileSystemEventHandler refresh = (s, e) => BeginInvoke((Action)RefreshPortal);
+                portalWatcher.Created += refresh;
+                portalWatcher.Deleted += refresh;
+                portalWatcher.Renamed += (s, e) => BeginInvoke((Action)RefreshPortal);
+            }
+            catch
+            {
+                // Folder vanished - portal shows as empty until it comes back.
+            }
         }
 
         private List<string> portalFiles;
@@ -339,13 +443,13 @@ namespace NoFences
         private IEnumerable<string> CurrentFiles()
         {
             if (!IsPortal)
-                return fenceInfo.Files;
+                return ApplySort(fenceInfo.Files);
 
             if (portalFiles == null)
             {
                 try
                 {
-                    portalFiles = Directory.EnumerateFileSystemEntries(fenceInfo.TargetFolder)
+                    portalFiles = Directory.EnumerateFileSystemEntries(CurrentPortalFolder)
                         .Where(p => (new FileInfo(p).Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0)
                         .ToList();
                 }
@@ -354,7 +458,36 @@ namespace NoFences
                     portalFiles = new List<string>();
                 }
             }
-            return portalFiles;
+            return ApplySort(portalFiles);
+        }
+
+        private IEnumerable<string> ApplySort(IEnumerable<string> files)
+        {
+            switch (fenceInfo.SortMode)
+            {
+                case 1:
+                    return files.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase);
+                case 2:
+                    // Folders first, then grouped by extension.
+                    return files.OrderBy(f => Directory.Exists(f) ? "" : Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase);
+                case 3:
+                    return files.OrderByDescending(GetLastWriteSafe);
+                default:
+                    return files;
+            }
+        }
+
+        private static DateTime GetLastWriteSafe(string path)
+        {
+            try
+            {
+                return File.GetLastWriteTime(path);
+            }
+            catch
+            {
+                return DateTime.MinValue;
+            }
         }
 
         protected override void WndProc(ref Message m)
@@ -465,16 +598,61 @@ namespace NoFences
             mediumIconsMenuItem.Checked = iconSize == 48;
             largeIconsMenuItem.Checked = iconSize == 64;
             portalMenuItem.Text = string.IsNullOrEmpty(fenceInfo.TargetFolder) ? "Folder portal..." : "Disable folder portal...";
+
+            for (var i = 0; i < sortMenuItem.DropDownItems.Count; i++)
+                ((ToolStripMenuItem)sortMenuItem.DropDownItems[i]).Checked = fenceInfo.SortMode == i;
+            for (var i = 0; i < OpacityValues.Length; i++)
+                ((ToolStripMenuItem)opacityMenuItem.DropDownItems[i]).Checked = fenceInfo.Transparency == OpacityValues[i];
         }
 
         private void FenceWindow_DragEnter(object sender, DragEventArgs e)
         {
-            if (e.Data.GetDataPresent(DataFormats.FileDrop) && !lockedToolStripMenuItem.Checked)
+            if ((e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(FenceItemDragFormat))
+                && !lockedToolStripMenuItem.Checked)
                 e.Effect = DragDropEffects.Move;
         }
 
         private void FenceWindow_DragDrop(object sender, DragEventArgs e)
         {
+            // Item dragged over from another fence.
+            if (e.Data.GetDataPresent(FenceItemDragFormat))
+            {
+                e.Effect = DragDropEffects.None;
+                var path = e.Data.GetData(FenceItemDragFormat) as string;
+                if (path == null)
+                    return;
+
+                if (IsPortal)
+                {
+                    try
+                    {
+                        var destination = Path.Combine(CurrentPortalFolder, Path.GetFileName(path));
+                        if (!destination.Equals(path, StringComparison.OrdinalIgnoreCase) && !ItemExists(destination))
+                        {
+                            if (File.Exists(path))
+                                File.Move(path, destination);
+                            else if (Directory.Exists(path))
+                                Directory.Move(path, destination);
+                            e.Effect = DragDropEffects.Move;
+                        }
+                    }
+                    catch
+                    {
+                        // Locked or otherwise immovable - the source keeps its item.
+                    }
+                }
+                else if (!fenceInfo.Files.Contains(path) && ItemExists(path))
+                {
+                    fenceInfo.Files.Add(path);
+                    DesktopIconHider.HideIfEnabled(path);
+                    NotifyItemAdded(path);
+                    Save();
+                    e.Effect = DragDropEffects.Move;
+                }
+                Refresh();
+                return;
+            }
+
             var dropped = (string[])e.Data.GetData(DataFormats.FileDrop);
 
             if (IsPortal)
@@ -484,7 +662,7 @@ namespace NoFences
                 {
                     try
                     {
-                        var destination = Path.Combine(fenceInfo.TargetFolder, Path.GetFileName(file));
+                        var destination = Path.Combine(CurrentPortalFolder, Path.GetFileName(file));
                         if (destination.Equals(file, StringComparison.OrdinalIgnoreCase) || ItemExists(destination))
                             continue;
                         if (File.Exists(file))
@@ -507,6 +685,7 @@ namespace NoFences
                 {
                     fenceInfo.Files.Add(file);
                     DesktopIconHider.HideIfEnabled(file);
+                    NotifyItemAdded(file);
                 }
             }
             Save();
@@ -530,6 +709,7 @@ namespace NoFences
 
         private void FenceWindow_MouseMove(object sender, MouseEventArgs e)
         {
+            HandleItemDrag(e);
             if (isDraggingScrollbar)
             {
                 var dragRange = ScrollbarTrackRect.Height - ScrollbarThumbRect.Height;
@@ -602,8 +782,9 @@ namespace NoFences
             e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-            // Background (tinted with the custom fence color, if set)
-            e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(100, baseColor)), ClientRectangle);
+            // Background (tinted with the custom fence color and per-fence opacity)
+            var bgAlpha = Math.Max(0, Math.Min(255, fenceInfo.Transparency * 255 / 100));
+            e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(bgAlpha, baseColor)), ClientRectangle);
 
             // Title
             e.Graphics.DrawString(Text, titleFont, Brushes.White, new PointF(Width / 2, titleOffset), new StringFormat { Alignment = StringAlignment.Center });
@@ -614,17 +795,9 @@ namespace NoFences
             var y = itemPadding;
             scrollHeight = 0;
             e.Graphics.Clip = new Region(new Rectangle(0, titleHeight, Width, Height - titleHeight));
-            var query = SearchQuery;
-            foreach (var file in CurrentFiles())
+            foreach (var item in BuildRenderItems())
             {
-                var entry = FenceEntry.FromPath(file);
-                if (entry == null)
-                    continue;
-
-                if (query.Length > 0 && entry.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
-                    continue;
-
-                RenderEntry(e.Graphics, entry, x, y + titleHeight - scrollOffset);
+                RenderEntry(e.Graphics, item, x, y + titleHeight - scrollOffset);
 
                 var itemBottom = y + itemHeight;
                 if (itemBottom > scrollHeight)
@@ -668,10 +841,49 @@ namespace NoFences
             hasHoverUpdated = false;
         }
 
-        private void RenderEntry(Graphics g, FenceEntry entry, int x, int y)
+        private class RenderItem
         {
+            public FenceEntry Entry;
+            public string Name;
+            public Action Open;
+        }
+
+        private List<RenderItem> BuildRenderItems()
+        {
+            var items = new List<RenderItem>();
+            var query = SearchQuery;
+
+            // Inside a navigated portal, the first tile goes back up.
+            if (IsPortal && portalCurrentPath != null)
+            {
+                var parent = Path.GetDirectoryName(CurrentPortalFolder) ?? fenceInfo.TargetFolder;
+                var upEntry = FenceEntry.FromPath(parent);
+                if (upEntry != null)
+                    items.Add(new RenderItem { Entry = upEntry, Name = "..", Open = NavigateUp });
+            }
+
+            foreach (var file in CurrentFiles())
+            {
+                var entry = FenceEntry.FromPath(file);
+                if (entry == null)
+                    continue;
+                if (query.Length > 0 && entry.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                // Portal folders navigate within the fence instead of opening Explorer.
+                var open = (IsPortal && entry.Type == EntryType.Folder)
+                    ? () => NavigateInto(entry.Path)
+                    : (Action)entry.Open;
+                items.Add(new RenderItem { Entry = entry, Name = entry.Name, Open = open });
+            }
+            return items;
+        }
+
+        private void RenderEntry(Graphics g, RenderItem item, int x, int y)
+        {
+            var entry = item.Entry;
             var icon = entry.ExtractIcon(thumbnailProvider, iconSize);
-            var name = entry.Name;
+            var name = item.Name;
 
             var textPosition = new PointF(x, y + iconSize + 5);
             var textMaxSize = new SizeF(itemWidth, textHeight);
@@ -701,7 +913,7 @@ namespace NoFences
             if (mouseOver && shouldRunDoubleClick)
             {
                 shouldRunDoubleClick = false;
-                entry.Open();
+                item.Open();
             }
 
             if (selectedItem == entry.Path)
@@ -724,6 +936,13 @@ namespace NoFences
                     g.DrawRectangle(new Pen(Color.FromArgb(120, SystemColors.ActiveBorder)), outlineRectInner);
                     g.FillRectangle(new SolidBrush(Color.FromArgb(80, SystemColors.ActiveCaption)), outlineRect);
                 }
+            }
+
+            // Freshly added items get a short golden highlight.
+            if (recentItems.ContainsKey(entry.Path))
+            {
+                g.DrawRectangle(new Pen(Color.FromArgb(220, Color.Gold), 1.5f), outlineRectInner);
+                g.FillRectangle(new SolidBrush(Color.FromArgb(35, Color.Gold)), outlineRect);
             }
 
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
@@ -859,8 +1078,14 @@ namespace NoFences
 
         private void FenceWindow_MouseDown(object sender, MouseEventArgs e)
         {
-            if (e.Button != MouseButtons.Left || scrollHeight < 1)
+            if (e.Button != MouseButtons.Left)
                 return;
+
+            if (scrollHeight < 1)
+            {
+                BeginPossibleItemDrag(e);
+                return;
+            }
 
             var thumb = ScrollbarThumbRect;
             var track = ScrollbarTrackRect;
@@ -885,10 +1110,87 @@ namespace NoFences
                 scrollDragStartOffset = scrollOffset;
                 Invalidate();
             }
+            else
+            {
+                BeginPossibleItemDrag(e);
+            }
+        }
+
+        private void BeginPossibleItemDrag(MouseEventArgs e)
+        {
+            // Portals show real files; moving those between fences is handled by Explorer semantics only.
+            if (IsPortal || hoveringItem == null || isDraggingScrollbar)
+                return;
+            pendingDragItem = hoveringItem;
+            dragStartPoint = e.Location;
+        }
+
+        private void HandleItemDrag(MouseEventArgs e)
+        {
+            if (pendingDragItem == null || e.Button != MouseButtons.Left || isDraggingScrollbar)
+                return;
+            if (Math.Abs(e.X - dragStartPoint.X) <= SystemInformation.DragSize.Width &&
+                Math.Abs(e.Y - dragStartPoint.Y) <= SystemInformation.DragSize.Height)
+                return;
+
+            var item = pendingDragItem;
+            pendingDragItem = null;
+
+            var data = new DataObject();
+            data.SetData(FenceItemDragFormat, item);
+            var result = DoDragDrop(data, DragDropEffects.Move);
+
+            // The receiving fence took over (it also keeps the desktop-hidden state),
+            // so drop only our own reference here.
+            if (result == DragDropEffects.Move)
+            {
+                fenceInfo.Files.Remove(item);
+                Save();
+                Refresh();
+            }
+        }
+
+        private void SnapToNeighbors()
+        {
+            if (lockedToolStripMenuItem.Checked)
+                return;
+
+            const int snapDistance = 12;
+            var workingArea = Screen.FromControl(this).WorkingArea;
+
+            var candidatesX = new List<int> { workingArea.Left, workingArea.Right - Width };
+            var candidatesY = new List<int> { workingArea.Top, workingArea.Bottom - Height };
+
+            foreach (var other in FenceManager.Instance.Windows)
+            {
+                if (other == this || !other.Visible)
+                    continue;
+                candidatesX.Add(other.Left);
+                candidatesX.Add(other.Right);
+                candidatesX.Add(other.Left - Width);
+                candidatesX.Add(other.Right - Width);
+                candidatesY.Add(other.Top);
+                candidatesY.Add(other.Bottom);
+                candidatesY.Add(other.Top - Height);
+                candidatesY.Add(other.Bottom - Height);
+            }
+
+            var newX = Location.X;
+            var newY = Location.Y;
+            foreach (var candidate in candidatesX)
+                if (Math.Abs(candidate - Location.X) <= snapDistance)
+                    newX = candidate;
+            foreach (var candidate in candidatesY)
+                if (Math.Abs(candidate - Location.Y) <= snapDistance)
+                    newY = candidate;
+
+            if (newX != Location.X || newY != Location.Y)
+                Location = new Point(newX, newY);
         }
 
         private void FenceWindow_MouseUp(object sender, MouseEventArgs e)
         {
+            pendingDragItem = null;
             if (isDraggingScrollbar)
             {
                 isDraggingScrollbar = false;
