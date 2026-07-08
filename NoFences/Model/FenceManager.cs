@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Xml.Serialization;
 
 namespace NoFences.Model
@@ -12,10 +14,44 @@ namespace NoFences.Model
 
         private readonly string basePath;
 
+        private readonly List<FenceWindow> windows = new List<FenceWindow>();
+
+        public IReadOnlyList<FenceWindow> Windows => windows;
+
+        public bool AllFencesHidden { get; private set; }
+
+        public AppSettings Settings { get; private set; } = new AppSettings();
+
         public FenceManager()
         {
             basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoFences");
             EnsureDirectoryExists(basePath);
+            LoadSettings();
+        }
+
+        private string SettingsFile => Path.Combine(basePath, "settings.xml");
+
+        private void LoadSettings()
+        {
+            try
+            {
+                if (!File.Exists(SettingsFile))
+                    return;
+                var serializer = new XmlSerializer(typeof(AppSettings));
+                using (var reader = new StreamReader(SettingsFile))
+                    Settings = (AppSettings)serializer.Deserialize(reader);
+            }
+            catch
+            {
+                Settings = new AppSettings();
+            }
+        }
+
+        public void SaveSettings()
+        {
+            var serializer = new XmlSerializer(typeof(AppSettings));
+            using (var writer = new StreamWriter(SettingsFile))
+                serializer.Serialize(writer, Settings);
         }
 
         public void LoadFences()
@@ -28,7 +64,7 @@ namespace NoFences.Model
                 var fence = serializer.Deserialize(reader) as FenceInfo;
                 reader.Close();
 
-                new FenceWindow(fence).Show();
+                ShowFence(fence);
             }
         }
 
@@ -44,7 +80,57 @@ namespace NoFences.Model
             };
 
             UpdateFence(fenceInfo);
-            new FenceWindow(fenceInfo).Show();
+            ShowFence(fenceInfo);
+        }
+
+        private void ShowFence(FenceInfo fenceInfo)
+        {
+            var window = new FenceWindow(fenceInfo);
+            windows.Add(window);
+            window.FormClosed += (s, e) => windows.Remove(window);
+            window.Show();
+            if (AllFencesHidden)
+                window.Hide();
+        }
+
+        /// <summary>
+        /// Quick-hide: toggles the visibility of every fence at once.
+        /// </summary>
+        public void ToggleAllFences()
+        {
+            AllFencesHidden = !AllFencesHidden;
+            foreach (var window in windows)
+            {
+                if (AllFencesHidden)
+                    window.Hide();
+                else
+                    window.Show();
+            }
+        }
+
+        /// <summary>
+        /// Adds a file to the first fence whose auto-sort patterns match it.
+        /// Must be called on the UI thread.
+        /// </summary>
+        public void TryAutoSort(string path)
+        {
+            var fileName = Path.GetFileName(path);
+            foreach (var window in windows)
+            {
+                var info = window.FenceInfo;
+                if (!string.IsNullOrEmpty(info.TargetFolder))
+                    continue;
+                if (!Util.WildcardMatcher.MatchesAny(info.AutoSortPatterns, fileName))
+                    continue;
+                if (info.Files.Contains(path))
+                    return;
+
+                info.Files.Add(path);
+                UpdateFence(info);
+                Util.DesktopIconHider.HideIfEnabled(path);
+                window.NotifyItemAdded(path);
+                return;
+            }
         }
 
         public void RemoveFence(FenceInfo info)
@@ -62,6 +148,52 @@ namespace NoFences.Model
             var writer = new StreamWriter(metaFile);
             serializer.Serialize(writer, fenceInfo);
             writer.Close();
+        }
+
+        /// <summary>
+        /// Writes all fences (layout + settings per fence) into a single XML file.
+        /// </summary>
+        public void ExportLayout(string path)
+        {
+            var list = windows.Select(w => w.FenceInfo).ToList();
+            var serializer = new XmlSerializer(typeof(List<FenceInfo>));
+            using (var writer = new StreamWriter(path))
+                serializer.Serialize(writer, list);
+        }
+
+        /// <summary>
+        /// Replaces all current fences with the ones from an exported layout file.
+        /// </summary>
+        public void ImportLayout(string path)
+        {
+            List<FenceInfo> imported;
+            var serializer = new XmlSerializer(typeof(List<FenceInfo>));
+            using (var reader = new StreamReader(path))
+                imported = serializer.Deserialize(reader) as List<FenceInfo>;
+
+            if (imported == null || imported.Count == 0)
+                throw new InvalidDataException("The file contains no fences.");
+
+            Util.DesktopIconHider.UnhideAllFenced();
+
+            // Create the new fences first so the app never sees zero open windows
+            // (closing the last window exits the application).
+            var oldWindows = windows.ToList();
+            foreach (var info in imported)
+            {
+                info.Id = Guid.NewGuid();
+                UpdateFence(info);
+                ShowFence(info);
+            }
+
+            foreach (var window in oldWindows)
+            {
+                RemoveFence(window.FenceInfo);
+                window.Close();
+            }
+
+            if (Settings.HideFencedDesktopItems)
+                Util.DesktopIconHider.HideAllFenced();
         }
 
         private void EnsureDirectoryExists(string dir)

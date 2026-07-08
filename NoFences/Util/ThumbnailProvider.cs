@@ -37,37 +37,47 @@ namespace NoFences.Util
             return SupportedExtensions.Any(ext => path.EndsWith(ext));
         }
 
-        public Icon GenerateThumbnail(string path)
+        public Icon GenerateThumbnail(string path, int size)
         {
-            if (!iconCache.ContainsKey(path))
+            var key = path + "|" + size;
+            if (!iconCache.ContainsKey(key))
             {
-                return SubmitGeneratorTask(path).icon;
+                return SubmitGeneratorTask(key, path, size).icon;
             }
             else
             {
-                return iconCache[path].icon;
+                return iconCache[key].icon;
             }
         }
 
-        private ThumbnailState SubmitGeneratorTask(string path)
+        private ThumbnailState SubmitGeneratorTask(string key, string path, int size)
         {
             var state = new ThumbnailState() { icon = Icon.ExtractAssociatedIcon(path) };
-            iconCache[path] = state;
+            iconCache[key] = state;
 
             Task.Run(() =>
             {
                 semaphore.Wait();
-                using (MemoryStream ms = new MemoryStream(File.ReadAllBytes(path)))
+                try
                 {
-                    using (var img = Image.FromStream(ms))
+                    using (MemoryStream ms = new MemoryStream(File.ReadAllBytes(path)))
                     {
-                        var thumb = (Bitmap)img.GetThumbnailImage(32, 32, () => false, IntPtr.Zero);
-                        var icon = Icon.FromHandle(thumb.GetHicon());
-                        state.icon = icon;
-                        IconThumbnailLoaded(this, new EventArgs());
-                        semaphore.Release();
-                        return icon;
+                        using (var img = Image.FromStream(ms))
+                        {
+                            var thumb = (Bitmap)img.GetThumbnailImage(size, size, () => false, IntPtr.Zero);
+                            var icon = Icon.FromHandle(thumb.GetHicon());
+                            state.icon = icon;
+                            IconThumbnailLoaded?.Invoke(this, new EventArgs());
+                        }
                     }
+                }
+                catch
+                {
+                    // Keep the fallback icon if the image cannot be decoded.
+                }
+                finally
+                {
+                    semaphore.Release();
                 }
             });
             return state;

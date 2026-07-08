@@ -1,4 +1,5 @@
 ﻿using NoFences.Model;
+using NoFences.Util;
 using System;
 using System.Threading;
 using System.Windows.Forms;
@@ -29,7 +30,16 @@ namespace NoFences
                     if (Application.OpenForms.Count == 0)
                         FenceManager.Instance.CreateFence("First fence");
 
-                    Application.Run();
+                    DesktopAutoSorter.Start();
+
+                    // Re-apply hiding in case files were added to fences while the app was not running.
+                    if (FenceManager.Instance.Settings.HideFencedDesktopItems)
+                        DesktopIconHider.HideAllFenced();
+
+                    using (new TrayIconHost())
+                    {
+                        Application.Run();
+                    }
                 }
             }
         }

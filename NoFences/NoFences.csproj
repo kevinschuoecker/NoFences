@@ -65,6 +65,7 @@
     <Compile Include="HeightDialog.Designer.cs">
       <DependentUpon>HeightDialog.cs</DependentUpon>
     </Compile>
+    <Compile Include="Model\AppSettings.cs" />
     <Compile Include="Model\EntryType.cs" />
     <Compile Include="Model\FenceEntry.cs" />
     <Compile Include="Model\FenceInfo.cs" />
@@ -76,10 +77,18 @@
       <DependentUpon>FenceWindow.cs</DependentUpon>
     </Compile>
     <Compile Include="Program.cs" />
+    <Compile Include="PromptDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TrayIconHost.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Util\AutostartUtil.cs" />
+    <Compile Include="Util\DesktopAutoSorter.cs" />
+    <Compile Include="Util\DesktopIconHider.cs" />
     <Compile Include="Util\Extensions.cs" />
     <Compile Include="Util\ThrottledExecution.cs" />
     <Compile Include="Util\ThumbnailProvider.cs" />
+    <Compile Include="Util\WildcardMatcher.cs" />
     <Compile Include="Win32\BlurUtil.cs" />
     <Compile Include="Win32\DesktopUtil.cs" />
     <Compile Include="Win32\DropShadow.cs" />

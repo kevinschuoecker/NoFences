@@ -60,5 +60,28 @@ namespace NoFences.Win32
 
             Marshal.FreeHGlobal(accentPtr);
         }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+        private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        private const int DWMWCP_ROUND = 2;
+
+        /// <summary>
+        /// Asks DWM for rounded window corners. Only has an effect on Windows 11;
+        /// on older systems the call fails silently.
+        /// </summary>
+        public static void TryEnableRoundedCorners(IntPtr hwnd)
+        {
+            try
+            {
+                var preference = DWMWCP_ROUND;
+                DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int));
+            }
+            catch
+            {
+                // Unsupported OS - keep square corners.
+            }
+        }
     }
 }
