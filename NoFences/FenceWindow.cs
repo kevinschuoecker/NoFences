@@ -366,7 +366,14 @@ namespace NoFences
 
         private void deleteItemToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            fenceInfo.Files.Remove(hoveringItem);
+            RemoveItemFromFence(hoveringItem);
+        }
+
+        private void RemoveItemFromFence(string path)
+        {
+            if (path == null)
+                return;
+            fenceInfo.Files.Remove(path);
             hoveringItem = null;
             Save();
             Refresh();
@@ -701,7 +708,11 @@ namespace NoFences
 
             if (hoveringItem != null && !ModifierKeys.HasFlag(Keys.Shift))
             {
-                shellContextMenu.ShowContextMenu(new[] { new FileInfo(hoveringItem) }, MousePosition);
+                var itemPath = hoveringItem;
+                // Portals show real files, so removing only the fence reference makes no sense there.
+                var customText = IsPortal ? null : "Remove from fence";
+                shellContextMenu.ShowContextMenu(new[] { new FileInfo(itemPath) }, MousePosition,
+                    customText, () => RemoveItemFromFence(itemPath));
             }
             else
             {

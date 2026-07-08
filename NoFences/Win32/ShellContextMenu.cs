@@ -442,8 +442,22 @@ namespace Peter
         /// <param name="pointScreen">Where to show the menu</param>
         public void ShowContextMenu(FileInfo[] files, Point pointScreen)
         {
+            ShowContextMenu(files, pointScreen, null, null);
+        }
+
+        /// <summary>
+        /// Shows the context menu with an additional custom item appended at the bottom.
+        /// </summary>
+        /// <param name="files">FileInfos (should all be in same directory)</param>
+        /// <param name="pointScreen">Where to show the menu</param>
+        /// <param name="customItemText">Text of the extra menu item, or null for none</param>
+        /// <param name="customItemAction">Invoked when the extra item is clicked</param>
+        public void ShowContextMenu(FileInfo[] files, Point pointScreen, string customItemText, Action customItemAction)
+        {
             // Release all resources first.
             ReleaseAll();
+            _customItemText = customItemText;
+            _customItemAction = customItemAction;
             _arrPIDLs = GetPIDLs(files);
             this.ShowContextMenu(pointScreen);
         }
@@ -498,6 +512,13 @@ namespace Peter
                     CMF.NORMAL |
                     ((Control.ModifierKeys & Keys.Shift) != 0 ? CMF.EXTENDEDVERBS : 0));
 
+                // Append the caller's custom item below the shell entries.
+                if (_customItemText != null)
+                {
+                    AppendMenu(pMenu, MF_SEPARATOR, UIntPtr.Zero, null);
+                    AppendMenu(pMenu, MF_STRING, (UIntPtr)CMD_CUSTOM_ITEM, _customItemText);
+                }
+
                 Marshal.QueryInterface(iContextMenuPtr, ref IID_IContextMenu2, out iContextMenuPtr2);
                 Marshal.QueryInterface(iContextMenuPtr, ref IID_IContextMenu3, out iContextMenuPtr3);
 
@@ -515,7 +536,11 @@ namespace Peter
                 DestroyMenu(pMenu);
                 pMenu = IntPtr.Zero;
 
-                if (nSelected != 0)
+                if (nSelected == CMD_CUSTOM_ITEM)
+                {
+                    _customItemAction?.Invoke();
+                }
+                else if (nSelected != 0)
                 {
                     InvokeCommand(_oContextMenu, nSelected, _strParentFolder, pointScreen);
                 }
@@ -554,6 +579,8 @@ namespace Peter
         private IShellFolder _oParentFolder;
         private IntPtr[] _arrPIDLs;
         private string _strParentFolder;
+        private string _customItemText;
+        private Action _customItemAction;
         #endregion
 
         #region Variables and Constants
@@ -561,6 +588,9 @@ namespace Peter
         private const int MAX_PATH = 260;
         private const uint CMD_FIRST = 1;
         private const uint CMD_LAST = 30000;
+        private const uint CMD_CUSTOM_ITEM = CMD_LAST + 2;
+        private const uint MF_STRING = 0x0;
+        private const uint MF_SEPARATOR = 0x800;
 
         private const int S_OK = 0;
         private const int S_FALSE = 1;
@@ -595,6 +625,10 @@ namespace Peter
         // Determines the default menu item on the specified menu
         [DllImport("user32", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern int GetMenuDefaultItem(IntPtr hMenu, bool fByPos, uint gmdiFlags);
+
+        // Appends a new item to the end of the specified menu
+        [DllImport("user32", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern bool AppendMenu(IntPtr hMenu, uint uFlags, UIntPtr uIDNewItem, string lpNewItem);
 
         #endregion
 
