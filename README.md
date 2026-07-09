@@ -1,8 +1,8 @@
-# NoFences
+# FlowGrid
 
-Didn't want to pay 11€, made my own.
+Didn't want to pay 11€, made my own. (Formerly known as NoFences.)
 
-![Screenshot](screenshot.png "NoFences in action")
+![Screenshot](screenshot.png "FlowGrid in action")
 
 ## Features
 
@@ -31,4 +31,4 @@ Didn't want to pay 11€, made my own.
 - **Start with Windows** (tray option): Toggles an autostart entry for the current user.
 - Rounded corners and background blur on Windows 11.
 
-Fence layout and settings are stored per fence in `%LOCALAPPDATA%\NoFences`.
+Fence layout and settings are stored per fence in `%LOCALAPPDATA%\FlowGrid`. On first start, data from a previous NoFences installation (`%LOCALAPPDATA%\NoFences`) is migrated automatically — close the old app before launching FlowGrid so the move succeeds.
