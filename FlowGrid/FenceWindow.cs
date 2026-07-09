@@ -154,6 +154,9 @@ namespace FlowGrid
             //DesktopUtil.PreventMinimize(Handle);
             logicalTitleHeight = (fenceInfo.TitleHeight < 16 || fenceInfo.TitleHeight > 100) ? 35 : fenceInfo.TitleHeight;
             titleHeight = LogicalToDeviceUnits(logicalTitleHeight);
+            // Never allow resizing below the title bar - negative content areas
+            // break font sizes and layout math.
+            MinimumSize = new Size(LogicalToDeviceUnits(100), titleHeight);
 
             this.MouseWheel += FenceWindow_MouseWheel;
             thumbnailProvider.IconThumbnailLoaded += ThumbnailProvider_IconThumbnailLoaded;
@@ -1293,6 +1296,12 @@ namespace FlowGrid
         private void RenderWidget(Graphics g)
         {
             var area = new Rectangle(0, titleHeight, Width, Height - titleHeight);
+
+            // Rolled up or squeezed tiny: nothing sensible to draw, and the
+            // area-derived font sizes must stay positive.
+            if (area.Width < 20 || area.Height < 20)
+                return;
+
             switch (fenceInfo.FenceType)
             {
                 case 2:
@@ -1635,6 +1644,7 @@ namespace FlowGrid
                 fenceInfo.TitleHeight = dialog.TitleHeight;
                 logicalTitleHeight = dialog.TitleHeight;
                 titleHeight = LogicalToDeviceUnits(logicalTitleHeight);
+                MinimumSize = new Size(LogicalToDeviceUnits(100), titleHeight);
                 ReloadFonts();
                 Minify();
                 if (isMinified && !HeightAnimating)
