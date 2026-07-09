@@ -1,0 +1,38 @@
+using System.Drawing;
+
+namespace FlowGrid.Sdk
+{
+    /// <summary>
+    /// Implement this interface in a class library, drop the DLL into
+    /// %LOCALAPPDATA%\FlowGrid\Plugins and FlowGrid offers your widget
+    /// under tray menu → "New widget".
+    /// </summary>
+    public interface IFlowGridWidget
+    {
+        /// <summary>Display name shown in the "New widget" menu and as the default fence title.</summary>
+        string Name { get; }
+
+        /// <summary>How often (milliseconds) the widget should be redrawn. 0 or less = only on demand.</summary>
+        int RefreshIntervalMs { get; }
+
+        /// <summary>
+        /// Draws the widget. Called on the UI thread on every refresh.
+        /// </summary>
+        /// <param name="g">Target graphics, anti-aliasing already enabled.</param>
+        /// <param name="area">The content area below the fence title bar.</param>
+        /// <param name="host">Access to fence styling (accent color, font).</param>
+        void Render(Graphics g, Rectangle area, IWidgetHost host);
+    }
+
+    /// <summary>
+    /// Styling information provided by the hosting fence.
+    /// </summary>
+    public interface IWidgetHost
+    {
+        /// <summary>The fence's custom tint color (black if none is set).</summary>
+        Color AccentColor { get; }
+
+        /// <summary>The font used for regular fence text.</summary>
+        Font BaseFont { get; }
+    }
+}

@@ -26,6 +26,20 @@ namespace FlowGrid
             widgetMenu.DropDownItems.Add("Clock", null, (s, e) => FenceManager.Instance.CreateFence("Clock", 2));
             widgetMenu.DropDownItems.Add("CPU && RAM", null, (s, e) => FenceManager.Instance.CreateFence("System", 3));
             widgetMenu.DropDownItems.Add("Calendar", null, (s, e) => FenceManager.Instance.CreateFence("Calendar", 4));
+
+            // Widgets provided by plugin DLLs.
+            if (PluginManager.Widgets.Count > 0)
+            {
+                widgetMenu.DropDownItems.Add(new ToolStripSeparator());
+                foreach (var widget in PluginManager.Widgets)
+                {
+                    var w = widget;
+                    widgetMenu.DropDownItems.Add(w.Name, null, (s, e) => FenceManager.Instance.CreatePluginFence(w));
+                }
+            }
+            widgetMenu.DropDownItems.Add(new ToolStripSeparator());
+            widgetMenu.DropDownItems.Add("Open plugins folder", null, (s, e) =>
+                System.Diagnostics.Process.Start("explorer.exe", PluginManager.PluginsPath));
             menu.Items.Add(widgetMenu);
             menu.Items.Add("Show/hide all fences  (Ctrl+Alt+H)", null, (s, e) => FenceManager.Instance.ToggleAllFences());
             menu.Items.Add("Sort desktop now", null, (s, e) => DesktopAutoSorter.ApplyRulesNow());

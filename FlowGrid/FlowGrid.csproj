@@ -87,6 +87,7 @@
     <Compile Include="Util\DesktopAutoSorter.cs" />
     <Compile Include="Util\DesktopIconHider.cs" />
     <Compile Include="Util\Extensions.cs" />
+    <Compile Include="Util\PluginManager.cs" />
     <Compile Include="Util\ThrottledExecution.cs" />
     <Compile Include="Util\ThumbnailProvider.cs" />
     <Compile Include="Util\WildcardMatcher.cs" />
@@ -147,6 +148,12 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FlowGrid.Sdk\FlowGrid.Sdk.csproj">
+      <Project>{3A1FBB47-4F80-4E52-9E8A-1B60A4A21D01}</Project>
+      <Name>FlowGrid.Sdk</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

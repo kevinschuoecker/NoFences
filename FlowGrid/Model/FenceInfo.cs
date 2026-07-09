@@ -81,7 +81,8 @@ namespace FlowGrid.Model
 
         /// <summary>
         /// Gets or sets what this window shows: 0 = items, 1 = sticky note,
-        /// 2 = clock widget, 3 = CPU/RAM widget, 4 = calendar widget.
+        /// 2 = clock widget, 3 = CPU/RAM widget, 4 = calendar widget,
+        /// 100 = plugin widget (see <see cref="WidgetPlugin"/>).
         /// </summary>
         public int FenceType { get; set; }
 
@@ -89,6 +90,11 @@ namespace FlowGrid.Model
         /// Gets or sets the text of a sticky note fence.
         /// </summary>
         public string NoteText { get; set; } = "";
+
+        /// <summary>
+        /// For plugin widget fences (FenceType 100): the full type name of the plugin widget.
+        /// </summary>
+        public string WidgetPlugin { get; set; } = "";
 
         /// <summary>
         /// Enumerates the items of all tabs (or the flat list when untabbed).

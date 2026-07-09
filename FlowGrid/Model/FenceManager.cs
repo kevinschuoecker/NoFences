@@ -109,6 +109,23 @@ namespace FlowGrid.Model
             ShowFence(fenceInfo);
         }
 
+        public void CreatePluginFence(Sdk.IFlowGridWidget widget)
+        {
+            var fenceInfo = new FenceInfo(Guid.NewGuid())
+            {
+                Name = widget.Name,
+                PosX = 100,
+                PosY = 250,
+                Height = 180,
+                Width = 280,
+                FenceType = 100,
+                WidgetPlugin = Util.PluginManager.GetId(widget)
+            };
+
+            UpdateFence(fenceInfo);
+            ShowFence(fenceInfo);
+        }
+
         private void ShowFence(FenceInfo fenceInfo)
         {
             var window = new FenceWindow(fenceInfo);

@@ -31,4 +31,28 @@ Didn't want to pay 11€, made my own. (Formerly known as NoFences.)
 - **Start with Windows** (tray option): Toggles an autostart entry for the current user.
 - Rounded corners and background blur on Windows 11.
 
+## Widget plugins
+
+FlowGrid loads custom widgets from DLLs in `%LOCALAPPDATA%\FlowGrid\Plugins` (tray → *New widget* → *Open plugins folder*). To build one:
+
+1. Create a .NET Framework 4.8 class library and reference `FlowGrid.Sdk.dll`.
+2. Implement `FlowGrid.Sdk.IFlowGridWidget`:
+
+```csharp
+public class MyWidget : IFlowGridWidget
+{
+    public string Name => "My widget";          // shown in the "New widget" menu
+    public int RefreshIntervalMs => 1000;       // 0 = static, no auto-redraw
+
+    public void Render(Graphics g, Rectangle area, IWidgetHost host)
+    {
+        g.DrawString("Hello!", host.BaseFont, Brushes.White, area);
+    }
+}
+```
+
+3. Copy the DLL into the plugins folder and restart FlowGrid — the widget appears under *New widget*.
+
+The `SampleWidgets` project in this repo contains a working example (system uptime). Plugin exceptions are caught and shown inside the fence, so a broken widget cannot crash the app. **Plugins run with full trust — only install DLLs you wrote or trust.**
+
 Fence layout and settings are stored per fence in `%LOCALAPPDATA%\FlowGrid`. On first start, data from a previous NoFences installation (`%LOCALAPPDATA%\NoFences`) is migrated automatically — close the old app before launching FlowGrid so the move succeeds.

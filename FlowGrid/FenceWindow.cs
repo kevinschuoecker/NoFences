@@ -99,6 +99,18 @@ namespace FlowGrid
         private System.Diagnostics.PerformanceCounter cpuCounter;
         private float lastCpuValue = -1;
 
+        // Plugin widget hosting (FenceType 100).
+        private Sdk.IFlowGridWidget pluginWidget;
+        private WidgetHost widgetHost;
+
+        private class WidgetHost : Sdk.IWidgetHost
+        {
+            private readonly FenceWindow owner;
+            public WidgetHost(FenceWindow owner) { this.owner = owner; }
+            public Color AccentColor => owner.baseColor;
+            public Font BaseFont => owner.iconFont;
+        }
+
         // Animation state: content scale while dragging the window plus release bounce,
         // and a fade-in when the fence first appears.
         private readonly Timer animTimer = new Timer { Interval = 15 };
@@ -176,6 +188,11 @@ namespace FlowGrid
             InitAnimations();
             if (IsNote)
                 InitNoteBox();
+            if (fenceInfo.FenceType == 100)
+            {
+                pluginWidget = PluginManager.Find(fenceInfo.WidgetPlugin);
+                widgetHost = new WidgetHost(this);
+            }
             if (IsWidget)
                 InitWidgetTimer();
 
@@ -311,7 +328,15 @@ namespace FlowGrid
 
         private void InitWidgetTimer()
         {
-            widgetTimer = new Timer { Interval = 1000 };
+            var interval = 1000;
+            if (fenceInfo.FenceType == 100)
+            {
+                if (pluginWidget == null || pluginWidget.RefreshIntervalMs <= 0)
+                    return; // plugin missing or static content - no auto refresh
+                interval = Math.Max(100, pluginWidget.RefreshIntervalMs);
+            }
+
+            widgetTimer = new Timer { Interval = interval };
             widgetTimer.Tick += (s, e) =>
             {
                 if (fenceInfo.FenceType == 3)
@@ -1279,6 +1304,31 @@ namespace FlowGrid
                 case 4:
                     RenderCalendarWidget(g, area);
                     break;
+                case 100:
+                    RenderPluginWidget(g, area);
+                    break;
+            }
+        }
+
+        private void RenderPluginWidget(Graphics g, Rectangle area)
+        {
+            var center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            if (pluginWidget == null)
+            {
+                g.DrawString("Plugin not found:\n" + fenceInfo.WidgetPlugin, iconFont,
+                    new SolidBrush(Color.FromArgb(200, Color.IndianRed)), area, center);
+                return;
+            }
+
+            try
+            {
+                pluginWidget.Render(g, area, widgetHost);
+            }
+            catch (Exception ex)
+            {
+                // A faulty plugin must never take the fence down.
+                g.DrawString("Widget error:\n" + ex.Message, iconFont,
+                    new SolidBrush(Color.FromArgb(200, Color.IndianRed)), area, center);
             }
         }
 

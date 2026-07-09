@@ -26,6 +26,9 @@ namespace FlowGrid
                     Application.EnableVisualStyles();
                     Application.SetCompatibleTextRenderingDefault(false);
 
+                    // Plugins must be available before fences load, since fences may host plugin widgets.
+                    PluginManager.LoadPlugins();
+
                     FenceManager.Instance.LoadFences();
                     if (Application.OpenForms.Count == 0)
                         FenceManager.Instance.CreateFence("First fence");
