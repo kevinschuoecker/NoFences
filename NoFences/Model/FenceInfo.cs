@@ -69,6 +69,39 @@ namespace NoFences.Model
 
         public List<string> Files { get; set; } = new List<string>();
 
+        /// <summary>
+        /// Gets or sets the tabs of this fence. Empty means a single untabbed view using <see cref="Files"/>.
+        /// </summary>
+        public List<FenceTab> Tabs { get; set; } = new List<FenceTab>();
+
+        /// <summary>
+        /// Gets or sets the index of the currently visible tab.
+        /// </summary>
+        public int ActiveTab { get; set; }
+
+        /// <summary>
+        /// Gets or sets what this window shows: 0 = items, 1 = sticky note,
+        /// 2 = clock widget, 3 = CPU/RAM widget, 4 = calendar widget.
+        /// </summary>
+        public int FenceType { get; set; }
+
+        /// <summary>
+        /// Gets or sets the text of a sticky note fence.
+        /// </summary>
+        public string NoteText { get; set; } = "";
+
+        /// <summary>
+        /// Enumerates the items of all tabs (or the flat list when untabbed).
+        /// </summary>
+        public IEnumerable<string> EnumerateAllFiles()
+        {
+            foreach (var file in Files)
+                yield return file;
+            foreach (var tab in Tabs)
+                foreach (var file in tab.Files)
+                    yield return file;
+        }
+
         public FenceInfo()
         {
 

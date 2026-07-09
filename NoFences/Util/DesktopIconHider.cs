@@ -47,7 +47,7 @@ namespace NoFences.Util
         private static void ForAllFencedItems(Action<string> action)
         {
             foreach (var window in FenceManager.Instance.Windows)
-                foreach (var file in window.FenceInfo.Files)
+                foreach (var file in window.FenceInfo.EnumerateAllFiles())
                     action(file);
         }
 

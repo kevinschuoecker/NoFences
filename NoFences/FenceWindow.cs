@@ -70,7 +70,42 @@ namespace NoFences
         // Drag & drop of items out of this fence.
         private string pendingDragItem;
         private Point dragStartPoint;
+        private bool droppedOnSelf;
         private const string FenceItemDragFormat = "NoFencesItem";
+
+        // Fence type helpers.
+        private bool IsNote => fenceInfo.FenceType == 1;
+        private bool IsWidget => fenceInfo.FenceType >= 2;
+        private bool IsNormal => fenceInfo.FenceType == 0;
+
+        // Tabs.
+        private bool HasTabs => IsNormal && !IsPortal && fenceInfo.Tabs.Count > 0;
+        private int TabStripHeight => HasTabs ? LogicalToDeviceUnits(26) : 0;
+        private int ContentTop => titleHeight + TabStripHeight;
+
+        private class TabHit
+        {
+            public Rectangle Rect;
+            public int Index; // -1 = the "+" button
+        }
+        private readonly List<TabHit> tabHitRects = new List<TabHit>();
+
+        // Sticky note editor.
+        private TextBox noteBox;
+        private readonly ThrottledExecution throttledNoteSave = new ThrottledExecution(TimeSpan.FromSeconds(2));
+
+        // Widget refresh + system counters.
+        private Timer widgetTimer;
+        private System.Diagnostics.PerformanceCounter cpuCounter;
+        private float lastCpuValue = -1;
+
+        // Animation state: content scale while dragging the window plus release bounce,
+        // and a fade-in when the fence first appears.
+        private readonly Timer animTimer = new Timer { Interval = 15 };
+        private float contentScale = 1f;
+        private float scaleTarget = 1f;
+        private bool bounceQueued;
+        private bool fadingIn;
 
         private readonly ThrottledExecution throttledMove = new ThrottledExecution(TimeSpan.FromSeconds(4));
         private readonly ThrottledExecution throttledResize = new ThrottledExecution(TimeSpan.FromSeconds(4));
@@ -126,6 +161,13 @@ namespace NoFences
             this.MouseDown += FenceWindow_MouseDown;
             this.MouseUp += FenceWindow_MouseUp;
             this.ResizeEnd += (s, e) => SnapToNeighbors();
+            this.DragOver += FenceWindow_DragOver;
+
+            InitAnimations();
+            if (IsNote)
+                InitNoteBox();
+            if (IsWidget)
+                InitWidgetTimer();
 
             highlightTimer.Tick += (s, e) =>
             {
@@ -138,6 +180,131 @@ namespace NoFences
             };
 
             Minify();
+        }
+
+        private void InitAnimations()
+        {
+            animTimer.Tick += (s, e) => StepAnimations();
+
+            // Fade in when the fence appears.
+            Opacity = 0;
+            fadingIn = true;
+            Shown += (s, e) => animTimer.Start();
+        }
+
+        private void StepAnimations()
+        {
+            var busy = false;
+
+            if (fadingIn)
+            {
+                Opacity = Math.Min(1.0, Opacity + 0.09);
+                if (Opacity >= 1.0)
+                {
+                    fadingIn = false;
+                    // Opacity animation uses a layered window which suspends the blur; restore it.
+                    BlurUtil.EnableBlur(Handle);
+                }
+                else
+                {
+                    busy = true;
+                }
+            }
+
+            if (Math.Abs(contentScale - scaleTarget) > 0.0015f)
+            {
+                contentScale += (scaleTarget - contentScale) * 0.35f;
+                busy = true;
+                Invalidate();
+            }
+            else if (bounceQueued)
+            {
+                // Overshoot reached - settle back to normal.
+                bounceQueued = false;
+                scaleTarget = 1f;
+                busy = true;
+            }
+            else if (contentScale != 1f && scaleTarget == 1f)
+            {
+                contentScale = 1f;
+                Invalidate();
+            }
+
+            if (!busy)
+                animTimer.Stop();
+        }
+
+        protected void OnWindowDragStarted()
+        {
+            scaleTarget = 0.97f;
+            bounceQueued = false;
+            animTimer.Start();
+        }
+
+        protected void OnWindowDragEnded()
+        {
+            scaleTarget = 1.015f;
+            bounceQueued = true;
+            animTimer.Start();
+        }
+
+        private void InitNoteBox()
+        {
+            noteBox = new TextBox
+            {
+                Multiline = true,
+                BorderStyle = BorderStyle.None,
+                BackColor = Color.FromArgb(37, 34, 20),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 11f),
+                ScrollBars = ScrollBars.Vertical,
+                Text = fenceInfo.NoteText
+            };
+            noteBox.TextChanged += (s, e) => throttledNoteSave.Run(SaveNoteText);
+            noteBox.Leave += (s, e) => SaveNoteText();
+            Controls.Add(noteBox);
+            PositionNoteBox();
+        }
+
+        private void SaveNoteText()
+        {
+            if (fenceInfo.NoteText == noteBox.Text)
+                return;
+            fenceInfo.NoteText = noteBox.Text;
+            Save();
+        }
+
+        private void PositionNoteBox()
+        {
+            var margin = LogicalToDeviceUnits(8);
+            noteBox.Location = new Point(margin, titleHeight + margin);
+            noteBox.Size = new Size(Math.Max(10, Width - 2 * margin), Math.Max(10, Height - titleHeight - 2 * margin));
+        }
+
+        private void InitWidgetTimer()
+        {
+            widgetTimer = new Timer { Interval = 1000 };
+            widgetTimer.Tick += (s, e) =>
+            {
+                if (fenceInfo.FenceType == 3)
+                    lastCpuValue = ReadCpuUsage();
+                Invalidate();
+            };
+            widgetTimer.Start();
+        }
+
+        private float ReadCpuUsage()
+        {
+            try
+            {
+                if (cpuCounter == null)
+                    cpuCounter = new System.Diagnostics.PerformanceCounter("Processor", "% Processor Time", "_Total");
+                return cpuCounter.NextValue();
+            }
+            catch
+            {
+                return -1;
+            }
         }
 
         /// <summary>Marks an item as freshly added so it gets a short highlight.</summary>
@@ -250,6 +417,10 @@ namespace NoFences
         private ToolStripMenuItem largeIconsMenuItem;
         private ToolStripMenuItem sortMenuItem;
         private ToolStripMenuItem opacityMenuItem;
+        private ToolStripMenuItem searchMenuItem;
+        private ToolStripMenuItem iconSizeMenuItem;
+        private ToolStripMenuItem rulesMenuItem;
+        private ToolStripMenuItem tabsMenuItem;
 
         private static readonly string[] SortModeNames = { "Manual order", "By name", "By type", "By date" };
         private static readonly int[] OpacityValues = { 15, 30, 40, 55, 70, 85 };
@@ -258,8 +429,17 @@ namespace NoFences
         {
             var insertAt = appContextMenu.Items.IndexOf(toolStripSeparator1);
 
-            var searchItem = new ToolStripMenuItem("Search in fence...");
-            searchItem.Click += (s, e) => ToggleSearch();
+            searchMenuItem = new ToolStripMenuItem("Search in fence...");
+            searchMenuItem.Click += (s, e) => ToggleSearch();
+
+            tabsMenuItem = new ToolStripMenuItem("Tabs");
+            var addTabItem = new ToolStripMenuItem("Add tab...");
+            addTabItem.Click += (s, e) => AddTab();
+            var renameTabItem = new ToolStripMenuItem("Rename current tab...");
+            renameTabItem.Click += (s, e) => RenameTab();
+            var removeTabItem = new ToolStripMenuItem("Remove current tab");
+            removeTabItem.Click += (s, e) => RemoveTab();
+            tabsMenuItem.DropDownItems.AddRange(new ToolStripItem[] { addTabItem, renameTabItem, removeTabItem });
 
             var colorItem = new ToolStripMenuItem("Fence color...");
             colorItem.Click += (s, e) => PickColor();
@@ -273,8 +453,8 @@ namespace NoFences
             mediumIconsMenuItem.Click += (s, e) => SetIconSize(48);
             largeIconsMenuItem = new ToolStripMenuItem("Large (64)");
             largeIconsMenuItem.Click += (s, e) => SetIconSize(64);
-            var iconSizeItem = new ToolStripMenuItem("Icon size");
-            iconSizeItem.DropDownItems.AddRange(new ToolStripItem[] { smallIconsMenuItem, mediumIconsMenuItem, largeIconsMenuItem });
+            iconSizeMenuItem = new ToolStripMenuItem("Icon size");
+            iconSizeMenuItem.DropDownItems.AddRange(new ToolStripItem[] { smallIconsMenuItem, mediumIconsMenuItem, largeIconsMenuItem });
 
             sortMenuItem = new ToolStripMenuItem("Sort items");
             for (var i = 0; i < SortModeNames.Length; i++)
@@ -297,8 +477,8 @@ namespace NoFences
             portalMenuItem = new ToolStripMenuItem("Folder portal...");
             portalMenuItem.Click += (s, e) => ConfigurePortal();
 
-            var rulesItem = new ToolStripMenuItem("Auto-sort rules...");
-            rulesItem.Click += (s, e) => ConfigureRules();
+            rulesMenuItem = new ToolStripMenuItem("Auto-sort rules...");
+            rulesMenuItem.Click += (s, e) => ConfigureRules();
 
             var sortNowItem = new ToolStripMenuItem("Sort desktop now");
             sortNowItem.Click += (s, e) => DesktopAutoSorter.ApplyRulesNow();
@@ -306,17 +486,121 @@ namespace NoFences
             var hideAllItem = new ToolStripMenuItem("Hide all fences  (Ctrl+Alt+H)");
             hideAllItem.Click += (s, e) => FenceManager.Instance.ToggleAllFences();
 
-            appContextMenu.Items.Insert(insertAt, searchItem);
-            appContextMenu.Items.Insert(insertAt + 1, sortMenuItem);
-            appContextMenu.Items.Insert(insertAt + 2, colorItem);
-            appContextMenu.Items.Insert(insertAt + 3, resetColorItem);
-            appContextMenu.Items.Insert(insertAt + 4, opacityMenuItem);
-            appContextMenu.Items.Insert(insertAt + 5, iconSizeItem);
-            appContextMenu.Items.Insert(insertAt + 6, portalMenuItem);
-            appContextMenu.Items.Insert(insertAt + 7, rulesItem);
-            appContextMenu.Items.Insert(insertAt + 8, sortNowItem);
-            appContextMenu.Items.Insert(insertAt + 9, new ToolStripSeparator());
-            appContextMenu.Items.Insert(insertAt + 10, hideAllItem);
+            appContextMenu.Items.Insert(insertAt, searchMenuItem);
+            appContextMenu.Items.Insert(insertAt + 1, tabsMenuItem);
+            appContextMenu.Items.Insert(insertAt + 2, sortMenuItem);
+            appContextMenu.Items.Insert(insertAt + 3, colorItem);
+            appContextMenu.Items.Insert(insertAt + 4, resetColorItem);
+            appContextMenu.Items.Insert(insertAt + 5, opacityMenuItem);
+            appContextMenu.Items.Insert(insertAt + 6, iconSizeMenuItem);
+            appContextMenu.Items.Insert(insertAt + 7, portalMenuItem);
+            appContextMenu.Items.Insert(insertAt + 8, rulesMenuItem);
+            appContextMenu.Items.Insert(insertAt + 9, sortNowItem);
+            appContextMenu.Items.Insert(insertAt + 10, new ToolStripSeparator());
+            appContextMenu.Items.Insert(insertAt + 11, hideAllItem);
+        }
+
+        private void AddTab()
+        {
+            using (var dialog = new PromptDialog("Add tab", "Name of the new tab:", ""))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Value.Trim().Length == 0)
+                    return;
+
+                // First tab: move the existing flat item list into a "Main" tab.
+                if (fenceInfo.Tabs.Count == 0)
+                {
+                    fenceInfo.Tabs.Add(new FenceTab { Name = "Main", Files = fenceInfo.Files });
+                    fenceInfo.Files = new List<string>();
+                }
+
+                fenceInfo.Tabs.Add(new FenceTab { Name = dialog.Value.Trim() });
+                fenceInfo.ActiveTab = fenceInfo.Tabs.Count - 1;
+                Save();
+                Refresh();
+            }
+        }
+
+        private void RenameTab()
+        {
+            if (!HasTabs)
+                return;
+            var tab = fenceInfo.Tabs[ClampActiveTab()];
+            using (var dialog = new PromptDialog("Rename tab", "New name for this tab:", tab.Name))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Value.Trim().Length == 0)
+                    return;
+                tab.Name = dialog.Value.Trim();
+                Save();
+                Refresh();
+            }
+        }
+
+        private void RemoveTab()
+        {
+            if (!HasTabs)
+                return;
+            var tab = fenceInfo.Tabs[ClampActiveTab()];
+            if (tab.Files.Count > 0 &&
+                MessageBox.Show(this, "The items of tab \"" + tab.Name + "\" will be released back to the desktop. Continue?",
+                    "Remove tab", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            foreach (var file in tab.Files)
+                DesktopIconHider.Unhide(file);
+            fenceInfo.Tabs.Remove(tab);
+
+            // Removing the last tab returns the fence to its untabbed mode.
+            if (fenceInfo.Tabs.Count == 1)
+            {
+                fenceInfo.Files = fenceInfo.Tabs[0].Files;
+                fenceInfo.Tabs.Clear();
+            }
+            fenceInfo.ActiveTab = 0;
+            Save();
+            Refresh();
+        }
+
+        private bool HandleTabClick(Point location)
+        {
+            if (!HasTabs)
+                return false;
+            foreach (var hit in tabHitRects)
+            {
+                if (!hit.Rect.Contains(location))
+                    continue;
+                if (hit.Index == -1)
+                {
+                    AddTab();
+                }
+                else if (fenceInfo.ActiveTab != hit.Index)
+                {
+                    fenceInfo.ActiveTab = hit.Index;
+                    scrollOffset = 0;
+                    Save();
+                    Refresh();
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private void FenceWindow_DragOver(object sender, DragEventArgs e)
+        {
+            // Hovering a tab header during a drag switches to that tab.
+            if (!HasTabs)
+                return;
+            var location = PointToClient(new Point(e.X, e.Y));
+            foreach (var hit in tabHitRects)
+            {
+                if (hit.Index >= 0 && hit.Rect.Contains(location) && fenceInfo.ActiveTab != hit.Index)
+                {
+                    fenceInfo.ActiveTab = hit.Index;
+                    scrollOffset = 0;
+                    Refresh();
+                    break;
+                }
+            }
         }
 
         private void SetSortMode(int mode)
@@ -440,10 +724,13 @@ namespace NoFences
             Invalidate();
         }
 
+        /// <summary>The mutable item list of the active tab (or the flat list when untabbed).</summary>
+        private List<string> CurrentFileList => HasTabs ? fenceInfo.Tabs[ClampActiveTab()].Files : fenceInfo.Files;
+
         private IEnumerable<string> CurrentFiles()
         {
             if (!IsPortal)
-                return ApplySort(fenceInfo.Files);
+                return ApplySort(CurrentFileList);
 
             if (portalFiles == null)
             {
@@ -522,6 +809,12 @@ namespace NoFences
                 return;
             }
 
+            // Subtle scale-down while the fence is being moved, bounce on release.
+            if (m.Msg == 0x0231) // WM_ENTERSIZEMOVE
+                OnWindowDragStarted();
+            if (m.Msg == 0x0232) // WM_EXITSIZEMOVE
+                OnWindowDragEnded();
+
             // Other messages
             base.WndProc(ref m);
 
@@ -566,7 +859,7 @@ namespace NoFences
             if (MessageBox.Show(this, "Really remove this fence?", "Remove", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
                 // Give the desktop its icons back before the fence disappears.
-                foreach (var file in fenceInfo.Files)
+                foreach (var file in fenceInfo.EnumerateAllFiles())
                     DesktopIconHider.Unhide(file);
                 FenceManager.Instance.RemoveFence(fenceInfo);
                 Close();
@@ -583,6 +876,8 @@ namespace NoFences
             if (path == null)
                 return;
             fenceInfo.Files.Remove(path);
+            foreach (var tab in fenceInfo.Tabs)
+                tab.Files.Remove(path);
             DesktopIconHider.Unhide(path);
             hoveringItem = null;
             Save();
@@ -603,10 +898,21 @@ namespace NoFences
                 ((ToolStripMenuItem)sortMenuItem.DropDownItems[i]).Checked = fenceInfo.SortMode == i;
             for (var i = 0; i < OpacityValues.Length; i++)
                 ((ToolStripMenuItem)opacityMenuItem.DropDownItems[i]).Checked = fenceInfo.Transparency == OpacityValues[i];
+
+            // Notes and widgets have no items, so hide everything item-related.
+            searchMenuItem.Visible = IsNormal;
+            sortMenuItem.Visible = IsNormal;
+            iconSizeMenuItem.Visible = IsNormal;
+            portalMenuItem.Visible = IsNormal;
+            rulesMenuItem.Visible = IsNormal;
+            tabsMenuItem.Visible = IsNormal && !IsPortal;
+            minifyToolStripMenuItem.Visible = !IsNote;
         }
 
         private void FenceWindow_DragEnter(object sender, DragEventArgs e)
         {
+            if (!IsNormal)
+                return;
             if ((e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(FenceItemDragFormat))
                 && !lockedToolStripMenuItem.Checked)
                 e.Effect = DragDropEffects.Move;
@@ -641,9 +947,18 @@ namespace NoFences
                         // Locked or otherwise immovable - the source keeps its item.
                     }
                 }
-                else if (!fenceInfo.Files.Contains(path) && ItemExists(path))
+                else if (ItemExists(path) && !CurrentFileList.Contains(path))
                 {
-                    fenceInfo.Files.Add(path);
+                    // If the item comes from another tab of this fence, move it here.
+                    droppedOnSelf = fenceInfo.EnumerateAllFiles().Contains(path);
+                    if (droppedOnSelf)
+                    {
+                        fenceInfo.Files.Remove(path);
+                        foreach (var tab in fenceInfo.Tabs)
+                            tab.Files.Remove(path);
+                    }
+
+                    CurrentFileList.Add(path);
                     DesktopIconHider.HideIfEnabled(path);
                     NotifyItemAdded(path);
                     Save();
@@ -681,9 +996,9 @@ namespace NoFences
 
             foreach (var file in dropped)
             {
-                if (!fenceInfo.Files.Contains(file) && ItemExists(file))
+                if (!fenceInfo.EnumerateAllFiles().Contains(file) && ItemExists(file))
                 {
-                    fenceInfo.Files.Add(file);
+                    CurrentFileList.Add(file);
                     DesktopIconHider.HideIfEnabled(file);
                     NotifyItemAdded(file);
                 }
@@ -696,6 +1011,8 @@ namespace NoFences
         {
             if (searchBox != null)
                 PositionSearchBox();
+            if (noteBox != null)
+                PositionNoteBox();
 
             throttledResize.Run(() =>
             {
@@ -782,6 +1099,14 @@ namespace NoFences
             e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
+            // Drag/bounce animation: scale the content around the center.
+            if (contentScale != 1f)
+            {
+                e.Graphics.TranslateTransform(Width / 2f, Height / 2f);
+                e.Graphics.ScaleTransform(contentScale, contentScale);
+                e.Graphics.TranslateTransform(-Width / 2f, -Height / 2f);
+            }
+
             // Background (tinted with the custom fence color and per-fence opacity)
             var bgAlpha = Math.Max(0, Math.Min(255, fenceInfo.Transparency * 255 / 100));
             e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(bgAlpha, baseColor)), ClientRectangle);
@@ -790,14 +1115,30 @@ namespace NoFences
             e.Graphics.DrawString(Text, titleFont, Brushes.White, new PointF(Width / 2, titleOffset), new StringFormat { Alignment = StringAlignment.Center });
             e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(50, Color.Black)), new RectangleF(0, 0, Width, titleHeight));
 
+            if (IsWidget)
+            {
+                RenderWidget(e.Graphics);
+                ResetClickFlags();
+                return;
+            }
+
+            if (IsNote)
+            {
+                ResetClickFlags();
+                return;
+            }
+
+            if (HasTabs)
+                RenderTabStrip(e.Graphics);
+
             // Items
             var x = itemPadding;
             var y = itemPadding;
             scrollHeight = 0;
-            e.Graphics.Clip = new Region(new Rectangle(0, titleHeight, Width, Height - titleHeight));
+            e.Graphics.Clip = new Region(new Rectangle(0, ContentTop, Width, Height - ContentTop));
             foreach (var item in BuildRenderItems())
             {
-                RenderEntry(e.Graphics, item, x, y + titleHeight - scrollOffset);
+                RenderEntry(e.Graphics, item, x, y + ContentTop - scrollOffset);
 
                 var itemBottom = y + itemHeight;
                 if (itemBottom > scrollHeight)
@@ -811,7 +1152,7 @@ namespace NoFences
                 }
             }
 
-            scrollHeight -= (ClientRectangle.Height - titleHeight);
+            scrollHeight -= (ClientRectangle.Height - ContentTop);
 
             // Scroll bar (proportional, draggable thumb)
             if (scrollHeight > 0)
@@ -829,6 +1170,11 @@ namespace NoFences
 
 
             // Click handlers
+            ResetClickFlags();
+        }
+
+        private void ResetClickFlags()
+        {
             if (shouldUpdateSelection && !hasSelectionUpdated)
                 selectedItem = null;
 
@@ -840,6 +1186,185 @@ namespace NoFences
             hasSelectionUpdated = false;
             hasHoverUpdated = false;
         }
+
+        private void RenderTabStrip(Graphics g)
+        {
+            tabHitRects.Clear();
+            var strip = new Rectangle(0, titleHeight, Width, TabStripHeight);
+            g.FillRectangle(new SolidBrush(Color.FromArgb(35, Color.Black)), strip);
+
+            var x = LogicalToDeviceUnits(4);
+            var padding = LogicalToDeviceUnits(10);
+            var active = ClampActiveTab();
+
+            for (var i = 0; i < fenceInfo.Tabs.Count; i++)
+            {
+                var name = fenceInfo.Tabs[i].Name ?? "Tab";
+                var textWidth = (int)g.MeasureString(name, iconFont).Width;
+                var rect = new Rectangle(x, strip.Y, textWidth + 2 * padding, strip.Height);
+
+                if (i == active)
+                {
+                    g.FillRectangle(new SolidBrush(Color.FromArgb(45, Color.White)), rect);
+                    g.FillRectangle(new SolidBrush(Color.FromArgb(220, Color.White)),
+                        new Rectangle(rect.X, rect.Bottom - 2, rect.Width, 2));
+                }
+
+                var textBrush = i == active ? Brushes.White : new SolidBrush(Color.FromArgb(170, Color.White));
+                g.DrawString(name, iconFont, textBrush,
+                    new RectangleF(rect.X, rect.Y, rect.Width, rect.Height),
+                    new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+
+                tabHitRects.Add(new TabHit { Rect = rect, Index = i });
+                x += rect.Width + LogicalToDeviceUnits(2);
+            }
+
+            // Trailing "+" button for adding a tab.
+            var plusRect = new Rectangle(x, strip.Y, strip.Height, strip.Height);
+            g.DrawString("+", iconFont, new SolidBrush(Color.FromArgb(170, Color.White)),
+                new RectangleF(plusRect.X, plusRect.Y, plusRect.Width, plusRect.Height),
+                new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+            tabHitRects.Add(new TabHit { Rect = plusRect, Index = -1 });
+        }
+
+        private int ClampActiveTab()
+        {
+            if (fenceInfo.ActiveTab < 0 || fenceInfo.ActiveTab >= fenceInfo.Tabs.Count)
+                fenceInfo.ActiveTab = 0;
+            return fenceInfo.ActiveTab;
+        }
+
+        private void RenderWidget(Graphics g)
+        {
+            var area = new Rectangle(0, titleHeight, Width, Height - titleHeight);
+            switch (fenceInfo.FenceType)
+            {
+                case 2:
+                    RenderClockWidget(g, area);
+                    break;
+                case 3:
+                    RenderSystemWidget(g, area);
+                    break;
+                case 4:
+                    RenderCalendarWidget(g, area);
+                    break;
+            }
+        }
+
+        private void RenderClockWidget(Graphics g, Rectangle area)
+        {
+            var now = DateTime.Now;
+            var center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            using (var timeFont = new Font("Segoe UI Light", area.Height * 0.30f, GraphicsUnit.Pixel))
+            using (var dateFont = new Font("Segoe UI", area.Height * 0.11f, GraphicsUnit.Pixel))
+            {
+                var timeRect = new RectangleF(area.X, area.Y, area.Width, area.Height * 0.62f);
+                var dateRect = new RectangleF(area.X, area.Y + area.Height * 0.58f, area.Width, area.Height * 0.32f);
+                g.DrawString(now.ToString("HH:mm:ss"), timeFont, Brushes.White, timeRect, center);
+                g.DrawString(now.ToString("dddd, d. MMMM yyyy"), dateFont, new SolidBrush(Color.FromArgb(200, Color.White)), dateRect, center);
+            }
+        }
+
+        private void RenderSystemWidget(Graphics g, Rectangle area)
+        {
+            var margin = LogicalToDeviceUnits(14);
+            var barHeight = LogicalToDeviceUnits(10);
+            var rowHeight = (area.Height - 2 * margin) / 2;
+
+            var cpu = lastCpuValue < 0 ? ReadCpuUsage() : lastCpuValue;
+            var ram = ReadRamUsage();
+
+            RenderUsageRow(g, "CPU", cpu, new Rectangle(area.X + margin, area.Y + margin, area.Width - 2 * margin, rowHeight), barHeight);
+            RenderUsageRow(g, "RAM", ram, new Rectangle(area.X + margin, area.Y + margin + rowHeight, area.Width - 2 * margin, rowHeight), barHeight);
+        }
+
+        private void RenderUsageRow(Graphics g, string label, float percent, Rectangle row, int barHeight)
+        {
+            var text = percent < 0 ? label + "  –" : string.Format("{0}  {1:0} %", label, percent);
+            g.DrawString(text, iconFont, Brushes.White, row.X, row.Y);
+
+            var barRect = new Rectangle(row.X, row.Y + row.Height - barHeight - 4, row.Width, barHeight);
+            g.FillRectangle(new SolidBrush(Color.FromArgb(50, Color.White)), barRect);
+            if (percent >= 0)
+            {
+                var fillWidth = (int)(barRect.Width * Math.Min(100f, percent) / 100f);
+                var fillColor = percent > 85 ? Color.IndianRed : (percent > 60 ? Color.Gold : Color.MediumSeaGreen);
+                g.FillRectangle(new SolidBrush(Color.FromArgb(200, fillColor)), new Rectangle(barRect.X, barRect.Y, fillWidth, barRect.Height));
+            }
+        }
+
+        private void RenderCalendarWidget(Graphics g, Rectangle area)
+        {
+            var now = DateTime.Now;
+            var margin = LogicalToDeviceUnits(10);
+            var center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
+            var headerRect = new RectangleF(area.X, area.Y + margin / 2, area.Width, LogicalToDeviceUnits(22));
+            using (var headerFont = new Font("Segoe UI Semibold", 11f))
+                g.DrawString(now.ToString("MMMM yyyy"), headerFont, Brushes.White, headerRect, center);
+
+            var gridTop = headerRect.Bottom + margin / 2;
+            var cellWidth = (area.Width - 2 * margin) / 7f;
+            var firstOfMonth = new DateTime(now.Year, now.Month, 1);
+            var startOffset = ((int)firstOfMonth.DayOfWeek + 6) % 7; // Monday first
+            var daysInMonth = DateTime.DaysInMonth(now.Year, now.Month);
+            var rows = (int)Math.Ceiling((startOffset + daysInMonth) / 7.0);
+            var cellHeight = (area.Bottom - gridTop - margin - LogicalToDeviceUnits(16)) / rows;
+
+            // Weekday header (Monday-first).
+            var dayNames = new[] { "Mo", "Di", "Mi", "Do", "Fr", "Sa", "So" };
+            for (var i = 0; i < 7; i++)
+            {
+                var rect = new RectangleF(area.X + margin + i * cellWidth, gridTop, cellWidth, LogicalToDeviceUnits(16));
+                g.DrawString(dayNames[i], iconFont, new SolidBrush(Color.FromArgb(150, Color.White)), rect, center);
+            }
+
+            var daysTop = gridTop + LogicalToDeviceUnits(16);
+            for (var day = 1; day <= daysInMonth; day++)
+            {
+                var index = startOffset + day - 1;
+                var col = index % 7;
+                var row = index / 7;
+                var rect = new RectangleF(area.X + margin + col * cellWidth, daysTop + row * cellHeight, cellWidth, cellHeight);
+
+                if (day == now.Day)
+                {
+                    var d = Math.Min(rect.Width, rect.Height) - 2;
+                    g.FillEllipse(new SolidBrush(Color.FromArgb(190, Color.White)),
+                        rect.X + (rect.Width - d) / 2, rect.Y + (rect.Height - d) / 2, d, d);
+                    g.DrawString(day.ToString(), iconFont, Brushes.Black, rect, center);
+                }
+                else
+                {
+                    g.DrawString(day.ToString(), iconFont, new SolidBrush(Color.FromArgb(210, Color.White)), rect, center);
+                }
+            }
+        }
+
+        private static float ReadRamUsage()
+        {
+            var status = new MEMORYSTATUSEX { dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(MEMORYSTATUSEX)) };
+            if (!GlobalMemoryStatusEx(ref status))
+                return -1;
+            return status.dwMemoryLoad;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct MEMORYSTATUSEX
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
 
         private class RenderItem
         {
@@ -935,6 +1460,22 @@ namespace NoFences
                 {
                     g.DrawRectangle(new Pen(Color.FromArgb(120, SystemColors.ActiveBorder)), outlineRectInner);
                     g.FillRectangle(new SolidBrush(Color.FromArgb(80, SystemColors.ActiveCaption)), outlineRect);
+                }
+            }
+
+            // Soft glow behind the hovered item.
+            if (mouseOver)
+            {
+                using (var glowPath = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    var glowRect = new Rectangle(outlineRect.X - 10, outlineRect.Y - 10, outlineRect.Width + 20, outlineRect.Height + 20);
+                    glowPath.AddEllipse(glowRect);
+                    using (var glow = new System.Drawing.Drawing2D.PathGradientBrush(glowPath))
+                    {
+                        glow.CenterColor = Color.FromArgb(45, Color.White);
+                        glow.SurroundColors = new[] { Color.FromArgb(0, Color.White) };
+                        g.FillEllipse(glow, glowRect);
+                    }
                 }
             }
 
@@ -1061,14 +1602,14 @@ namespace NoFences
                 scrollOffset = scrollHeight;
         }
 
-        private Rectangle ScrollbarTrackRect => new Rectangle(Width - 10, titleHeight + 2, 7, Height - titleHeight - 4);
+        private Rectangle ScrollbarTrackRect => new Rectangle(Width - 10, ContentTop + 2, 7, Height - ContentTop - 4);
 
         private Rectangle ScrollbarThumbRect
         {
             get
             {
                 var track = ScrollbarTrackRect;
-                var viewport = Height - titleHeight;
+                var viewport = Height - ContentTop;
                 var total = scrollHeight + viewport;
                 var thumbHeight = Math.Max(24, track.Height * viewport / Math.Max(1, total));
                 var y = track.Y + (int)((long)(track.Height - thumbHeight) * scrollOffset / Math.Max(1, scrollHeight));
@@ -1079,6 +1620,9 @@ namespace NoFences
         private void FenceWindow_MouseDown(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left)
+                return;
+
+            if (HandleTabClick(e.Location))
                 return;
 
             if (scrollHeight < 1)
@@ -1138,16 +1682,21 @@ namespace NoFences
 
             var data = new DataObject();
             data.SetData(FenceItemDragFormat, item);
+            droppedOnSelf = false;
             var result = DoDragDrop(data, DragDropEffects.Move);
 
             // The receiving fence took over (it also keeps the desktop-hidden state),
-            // so drop only our own reference here.
-            if (result == DragDropEffects.Move)
+            // so drop only our own reference here. Tab-to-tab moves within this
+            // fence already handled the lists themselves.
+            if (result == DragDropEffects.Move && !droppedOnSelf)
             {
                 fenceInfo.Files.Remove(item);
+                foreach (var tab in fenceInfo.Tabs)
+                    tab.Files.Remove(item);
                 Save();
                 Refresh();
             }
+            droppedOnSelf = false;
         }
 
         private void SnapToNeighbors()
