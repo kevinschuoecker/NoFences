@@ -74,13 +74,24 @@ namespace FlowGrid.Model
         {
             foreach (var dir in Directory.EnumerateDirectories(basePath))
             {
+                // Skip folders that are no fences (e.g. the Plugins folder lives here too).
                 var metaFile = Path.Combine(dir, MetaFileName);
-                var serializer = new XmlSerializer(typeof(FenceInfo));
-                var reader = new StreamReader(metaFile);
-                var fence = serializer.Deserialize(reader) as FenceInfo;
-                reader.Close();
+                if (!File.Exists(metaFile))
+                    continue;
 
-                ShowFence(fence);
+                try
+                {
+                    var serializer = new XmlSerializer(typeof(FenceInfo));
+                    using (var reader = new StreamReader(metaFile))
+                    {
+                        var fence = serializer.Deserialize(reader) as FenceInfo;
+                        ShowFence(fence);
+                    }
+                }
+                catch
+                {
+                    // Corrupt fence metadata - skip it instead of preventing startup.
+                }
             }
         }
 
