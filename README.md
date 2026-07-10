@@ -51,6 +51,16 @@ public class MyWidget : IFlowGridWidget
 
 3. Copy the DLL into the plugins folder and restart FlowGrid — the widget appears under *New widget*.
 
-The `SampleWidgets` project in this repo contains a working example (system uptime). Plugin exceptions are caught and shown inside the fence, so a broken widget cannot crash the app. **Plugins run with full trust — only install DLLs you wrote or trust.**
+**SDK v2**: implement `IFlowGridWidget2` instead to also receive mouse clicks, and use `host.Settings` (a free-form string persisted with the fence) to store per-fence state:
+
+```csharp
+public bool OnClick(Point location, Rectangle area, IWidgetHost host)
+{
+    host.Settings = "clicked=1";   // saved immediately, per fence
+    return true;                   // true = repaint now
+}
+```
+
+The `SampleWidgets` project contains working examples: system uptime, weather (open-meteo, keyless), a **system monitor** (CPU/RAM/GPU/VRAM/disks with clickable toggle chips) and a **stock/ETF ticker** (Yahoo Finance, keyless; symbols in `Plugins\stocks.txt`, click to refresh). Plugin exceptions are caught and shown inside the fence, so a broken widget cannot crash the app. **Plugins run with full trust — only install DLLs you wrote or trust.**
 
 Fence layout and settings are stored per fence in `%LOCALAPPDATA%\FlowGrid`. On first start, data from a previous NoFences installation (`%LOCALAPPDATA%\NoFences`) is migrated automatically — close the old app before launching FlowGrid so the move succeeds.

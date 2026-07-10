@@ -31,9 +31,12 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
+    <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="StockTickerWidget.cs" />
+    <Compile Include="SystemMonitorWidget.cs" />
     <Compile Include="UptimeWidget.cs" />
     <Compile Include="WeatherWidget.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
