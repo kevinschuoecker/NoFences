@@ -1601,9 +1601,9 @@ namespace FlowGrid
 
         private void FenceWindow_FormClosed(object sender, FormClosedEventArgs e)
         {
+            // App exit on last closed fence is handled by FenceManager;
+            // Application.OpenForms is unreliable with recreated handles.
             portalWatcher?.Dispose();
-            if (Application.OpenForms.Count == 0)
-                Application.Exit();
         }
 
         private readonly object saveLock = new object();
