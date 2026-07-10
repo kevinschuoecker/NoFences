@@ -109,6 +109,16 @@ namespace FlowGrid
             public WidgetHost(FenceWindow owner) { this.owner = owner; }
             public Color AccentColor => owner.baseColor;
             public Font BaseFont => owner.iconFont;
+
+            public string Settings
+            {
+                get => owner.fenceInfo.WidgetSettings ?? "";
+                set
+                {
+                    owner.fenceInfo.WidgetSettings = value ?? "";
+                    owner.Save();
+                }
+            }
         }
 
         // Animation state: content scale while dragging the window plus release bounce,
@@ -1712,6 +1722,22 @@ namespace FlowGrid
         {
             if (e.Button != MouseButtons.Left)
                 return;
+
+            // SDK v2 plugins receive clicks inside their content area.
+            if (fenceInfo.FenceType == 100 && pluginWidget is Sdk.IFlowGridWidget2 clickable && e.Y > titleHeight)
+            {
+                var area = new Rectangle(0, titleHeight, Width, Height - titleHeight);
+                try
+                {
+                    if (clickable.OnClick(e.Location, area, widgetHost))
+                        Invalidate();
+                }
+                catch
+                {
+                    // A faulty plugin must never take the fence down.
+                }
+                return;
+            }
 
             if (HandleTabClick(e.Location))
                 return;

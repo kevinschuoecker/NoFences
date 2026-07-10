@@ -25,7 +25,23 @@ namespace FlowGrid.Sdk
     }
 
     /// <summary>
-    /// Styling information provided by the hosting fence.
+    /// SDK v2: widgets that additionally handle mouse clicks. FlowGrid detects
+    /// this interface automatically; v1 widgets keep working unchanged.
+    /// </summary>
+    public interface IFlowGridWidget2 : IFlowGridWidget
+    {
+        /// <summary>
+        /// Called on the UI thread when the user left-clicks inside the widget area.
+        /// </summary>
+        /// <param name="location">Click position in window coordinates (same space as <paramref name="area"/>).</param>
+        /// <param name="area">The current content area, identical to what Render receives.</param>
+        /// <param name="host">Access to fence styling and per-fence settings.</param>
+        /// <returns>true to trigger an immediate repaint.</returns>
+        bool OnClick(Point location, Rectangle area, IWidgetHost host);
+    }
+
+    /// <summary>
+    /// Styling information and per-fence storage provided by the hosting fence.
     /// </summary>
     public interface IWidgetHost
     {
@@ -34,5 +50,12 @@ namespace FlowGrid.Sdk
 
         /// <summary>The font used for regular fence text.</summary>
         Font BaseFont { get; }
+
+        /// <summary>
+        /// Free-form settings string persisted with the hosting fence. Widgets can
+        /// store per-fence state here (e.g. which sections are visible); assigning
+        /// a value saves it immediately. Empty string when nothing was stored yet.
+        /// </summary>
+        string Settings { get; set; }
     }
 }
