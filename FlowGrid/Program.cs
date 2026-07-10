@@ -30,7 +30,10 @@ namespace FlowGrid
                     PluginManager.LoadPlugins();
 
                     FenceManager.Instance.LoadFences();
-                    if (Application.OpenForms.Count == 0)
+                    // Don't use Application.OpenForms here: the fade-in animation sets
+                    // Opacity, which recreates window handles and silently drops forms
+                    // from OpenForms - making it report 0 even with fences loaded.
+                    if (FenceManager.Instance.Windows.Count == 0)
                         FenceManager.Instance.CreateFence("First fence");
 
                     DesktopAutoSorter.Start();
