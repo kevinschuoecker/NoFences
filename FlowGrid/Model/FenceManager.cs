@@ -285,6 +285,8 @@ namespace FlowGrid.Model
 
             foreach (var window in oldWindows)
             {
+                // Block pending debounced saves from resurrecting the deleted fence.
+                window.SuppressPersistence = true;
                 RemoveFence(window.FenceInfo);
                 window.Close();
             }

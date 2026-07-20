@@ -7,6 +7,12 @@ The release pipeline publishes the section matching the pushed tag.
 ## [Unreleased]
 
 ### Fixed
+- Deleted fences can no longer resurrect: pending debounced saves are
+  blocked once a fence is removed or replaced by a layout import
+- Off-screen rescue now queries the live monitor layout (the framework's
+  cached screen list is stale right after display changes)
+- Closed fences no longer leak timers or the CPU performance counter;
+  pending position/note changes are saved on close
 - Control-hosted widgets (e.g. Jira, third-party plugins) no longer
   swallow the right-click: the fence context menu - including the
   plugin's own entries like "Configure..." - now opens over the hosted
