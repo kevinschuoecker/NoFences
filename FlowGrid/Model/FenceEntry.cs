@@ -31,6 +31,16 @@ namespace FlowGrid.Model
             else return null;
         }
 
+        /// <summary>
+        /// Creates an entry whose type is already known (e.g. from a directory
+        /// enumeration), skipping the two filesystem existence checks of
+        /// <see cref="FromPath"/> - important in hot paths like portal rendering.
+        /// </summary>
+        public static FenceEntry FromKnownType(string path, EntryType type)
+        {
+            return new FenceEntry(path, type);
+        }
+
         public Icon ExtractIcon(ThumbnailProvider thumbnailProvider, int size)
         {
             if (Type == EntryType.File && thumbnailProvider.IsSupported(Path))

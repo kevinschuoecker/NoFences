@@ -12,5 +12,10 @@ namespace FlowGrid.Model
         public string Name { get; set; }
 
         public List<string> Files { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Folder this tab mirrors (per-tab portal). Empty means a regular item tab.
+        /// </summary>
+        public string TargetFolder { get; set; } = "";
     }
 }

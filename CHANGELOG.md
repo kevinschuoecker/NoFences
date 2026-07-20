@@ -6,6 +6,13 @@ The release pipeline publishes the section matching the pushed tag.
 
 ## [Unreleased]
 
+### Fixed
+- Portals on large folders no longer freeze the fence: contents load in
+  the background with a progress hint, and rendering no longer touches
+  the filesystem per item
+- Tabs and portals now combine: a portal is configured per tab, so the
+  tab strip stays visible and other tabs keep their items
+
 ## [0.9.0]
 
 Public beta preview of the 1.0 feature set (see below). Not for production
