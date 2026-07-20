@@ -141,7 +141,13 @@ namespace FlowGrid.Model
         {
             var window = new FenceWindow(fenceInfo);
             windows.Add(window);
-            window.FormClosed += (s, e) => windows.Remove(window);
+            window.FormClosed += (s, e) =>
+            {
+                windows.Remove(window);
+                // The app lives as long as at least one fence exists.
+                if (windows.Count == 0)
+                    System.Windows.Forms.Application.Exit();
+            };
             window.Show();
             if (AllFencesHidden)
                 window.Hide();

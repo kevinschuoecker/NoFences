@@ -15,7 +15,7 @@ namespace SampleWidgets
     /// %LOCALAPPDATA%\FlowGrid\Plugins\weather-location.txt containing the
     /// city name (e.g. "Wien") and restart FlowGrid.
     /// </summary>
-    public class WeatherWidget : IFlowGridWidget
+    public class WeatherWidget : IFlowGridWidget3
     {
         public string Name => "Weather";
 
@@ -84,6 +84,46 @@ namespace SampleWidgets
                 g.DrawString(footer, textFont, new SolidBrush(Color.FromArgb(170, Color.White)), footRect, center);
             }
         }
+
+        /// <summary>Click anywhere = refresh now.</summary>
+        public bool OnClick(Point location, Rectangle area, IWidgetHost host)
+        {
+            lock (sync)
+                lastFetch = DateTime.MinValue;
+            EnsureData();
+            return true;
+        }
+
+        public System.Collections.Generic.IList<WidgetMenuItem> GetMenuItems(IWidgetHost host)
+        {
+            return new System.Collections.Generic.List<WidgetMenuItem>
+            {
+                new WidgetMenuItem("Set weather location...", () =>
+                {
+                    var current = File.Exists(ConfigFile) ? File.ReadAllText(ConfigFile).Trim() : "";
+                    var input = host.PromptText("Weather location",
+                        "City name (leave empty to auto-detect via IP):", current);
+                    if (input == null)
+                        return;
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(ConfigFile));
+                        File.WriteAllText(ConfigFile, input.Trim());
+                    }
+                    catch
+                    {
+                        return;
+                    }
+                    lock (sync)
+                        lastFetch = DateTime.MinValue;
+                    EnsureData();
+                })
+            };
+        }
+
+        private static string ConfigFile => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FlowGrid", "Plugins", "weather-location.txt");
 
         private void EnsureData()
         {

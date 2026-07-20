@@ -97,6 +97,11 @@ namespace FlowGrid.Model
         public string WidgetPlugin { get; set; } = "";
 
         /// <summary>
+        /// For plugin widget fences: free-form per-fence settings owned by the plugin.
+        /// </summary>
+        public string WidgetSettings { get; set; } = "";
+
+        /// <summary>
         /// Enumerates the items of all tabs (or the flat list when untabbed).
         /// </summary>
         public IEnumerable<string> EnumerateAllFiles()
