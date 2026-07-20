@@ -6,11 +6,11 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("FlowGrid")]
-[assembly: AssemblyDescription("Open Source Alternative to 'Stardock Fences'")]
+[assembly: AssemblyDescription("Desktop organizer with fences, portals, widgets and a plugin platform")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
+[assembly: AssemblyCompany("FlowGrid")]
 [assembly: AssemblyProduct("FlowGrid")]
-[assembly: AssemblyCopyright("Copyright © Twometer 2021")]
+[assembly: AssemblyCopyright("Copyright © 2026 FlowGrid contributors, © 2021 Twometer (NoFences)")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -32,5 +32,6 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("1.6.0.0")]
-[assembly: AssemblyFileVersion("1.6.0.0")]
+// The release pipeline overwrites these from the git tag (v1.2.3 -> 1.2.3.0).
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]

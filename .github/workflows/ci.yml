@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build (Release)
+        run: msbuild FlowGrid.sln /p:Configuration=Release /m /v:m
+
+      # Test projects are discovered automatically once they exist (Sprint 3).
+      - name: Run tests
+        shell: pwsh
+        run: |
+          $testDlls = Get-ChildItem -Recurse -Filter "*.Tests.dll" -Path . |
+            Where-Object { $_.FullName -match '\\bin\\Release\\' }
+          if ($testDlls) {
+            vstest.console.exe $testDlls.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            Write-Host "No test assemblies found - skipping."
+          }
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlowGrid-ci-build
+          path: |
+            FlowGrid/bin/Release/FlowGrid.exe
+            FlowGrid/bin/Release/FlowGrid.exe.config
+            FlowGrid/bin/Release/FlowGrid.Sdk.dll
+            SampleWidgets/bin/Release/SampleWidgets.dll

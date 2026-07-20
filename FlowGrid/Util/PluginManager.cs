@@ -50,16 +50,20 @@ namespace FlowGrid.Util
                 try
                 {
                     var assembly = Assembly.LoadFrom(dll);
+                    var found = 0;
                     foreach (var type in assembly.GetExportedTypes())
                     {
                         if (type.IsAbstract || !typeof(IFlowGridWidget).IsAssignableFrom(type))
                             continue;
                         widgets.Add((IFlowGridWidget)Activator.CreateInstance(type));
+                        found++;
                     }
+                    Log.Info($"Plugin loaded: {Path.GetFileName(dll)} ({found} widgets)");
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Broken or incompatible plugin - skip it, keep the app alive.
+                    Log.Error($"Failed to load plugin {Path.GetFileName(dll)}", ex);
                 }
             }
         }

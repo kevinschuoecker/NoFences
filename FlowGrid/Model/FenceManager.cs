@@ -49,25 +49,19 @@ namespace FlowGrid.Model
 
         private void LoadSettings()
         {
-            try
-            {
-                if (!File.Exists(SettingsFile))
-                    return;
-                var serializer = new XmlSerializer(typeof(AppSettings));
-                using (var reader = new StreamReader(SettingsFile))
-                    Settings = (AppSettings)serializer.Deserialize(reader);
-            }
-            catch
-            {
-                Settings = new AppSettings();
-            }
+            Settings = Util.SafeStorage.Load<AppSettings>(SettingsFile) ?? new AppSettings();
         }
 
         public void SaveSettings()
         {
-            var serializer = new XmlSerializer(typeof(AppSettings));
-            using (var writer = new StreamWriter(SettingsFile))
-                serializer.Serialize(writer, Settings);
+            try
+            {
+                Util.SafeStorage.Save(SettingsFile, Settings);
+            }
+            catch (Exception ex)
+            {
+                Util.Log.Error("Failed to save settings", ex);
+            }
         }
 
         public void LoadFences()
@@ -76,21 +70,23 @@ namespace FlowGrid.Model
             {
                 // Skip folders that are no fences (e.g. the Plugins folder lives here too).
                 var metaFile = Path.Combine(dir, MetaFileName);
-                if (!File.Exists(metaFile))
+                if (!File.Exists(metaFile) && !File.Exists(metaFile + ".bak"))
                     continue;
+
+                var fence = Util.SafeStorage.Load<FenceInfo>(metaFile);
+                if (fence == null)
+                {
+                    Util.Log.Error($"Skipping unreadable fence: {dir}");
+                    continue;
+                }
 
                 try
                 {
-                    var serializer = new XmlSerializer(typeof(FenceInfo));
-                    using (var reader = new StreamReader(metaFile))
-                    {
-                        var fence = serializer.Deserialize(reader) as FenceInfo;
-                        ShowFence(fence);
-                    }
+                    ShowFence(fence);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Corrupt fence metadata - skip it instead of preventing startup.
+                    Util.Log.Error($"Failed to open fence '{fence.Name}' ({fence.Id})", ex);
                 }
             }
         }
@@ -118,6 +114,36 @@ namespace FlowGrid.Model
 
             UpdateFence(fenceInfo);
             ShowFence(fenceInfo);
+        }
+
+        /// <summary>
+        /// First-run experience: an empty fence to play with plus a sticky note
+        /// explaining the essentials, so a new user needs no manual.
+        /// </summary>
+        public void CreateWelcomeFences()
+        {
+            CreateFence("My first fence");
+
+            var note = new FenceInfo(Guid.NewGuid())
+            {
+                Name = "Welcome to FlowGrid",
+                FenceType = 1,
+                PosX = 430,
+                PosY = 250,
+                Width = 360,
+                Height = 300,
+                CustomColor = "#6B5900",
+                NoteText =
+                    "Welcome! The basics:\r\n\r\n" +
+                    "- Drag files from the desktop into a fence\r\n" +
+                    "- Double-click an item to open it\r\n" +
+                    "- Right-click a fence: colors, tabs, search, sorting, folder portals\r\n" +
+                    "- Ctrl+Alt+H hides all fences at once\r\n" +
+                    "- Tray icon: widgets, layout backup, autostart\r\n\r\n" +
+                    "You can delete this note anytime: right-click -> Remove fence."
+            };
+            UpdateFence(note);
+            ShowFence(note);
         }
 
         public void CreatePluginFence(Sdk.IFlowGridWidget widget)
@@ -202,14 +228,16 @@ namespace FlowGrid.Model
 
         public void UpdateFence(FenceInfo fenceInfo)
         {
-            var path = GetFolderPath(fenceInfo);
-            EnsureDirectoryExists(path);
-
-            var metaFile = Path.Combine(path, MetaFileName);
-            var serializer = new XmlSerializer(typeof(FenceInfo));
-            var writer = new StreamWriter(metaFile);
-            serializer.Serialize(writer, fenceInfo);
-            writer.Close();
+            try
+            {
+                var path = GetFolderPath(fenceInfo);
+                EnsureDirectoryExists(path);
+                Util.SafeStorage.Save(Path.Combine(path, MetaFileName), fenceInfo);
+            }
+            catch (Exception ex)
+            {
+                Util.Log.Error($"Failed to save fence '{fenceInfo.Name}' ({fenceInfo.Id})", ex);
+            }
         }
 
         /// <summary>

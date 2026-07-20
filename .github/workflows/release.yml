@@ -1,0 +1,106 @@
+# Release pipeline: push a tag "v1.2.3" and this produces a GitHub release
+# containing the installer, a portable ZIP, SHA-256 checksums and the release
+# notes extracted from CHANGELOG.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag must look like v1.2.3, got: $version" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Stamp assembly version
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}.0"
+          $file = "FlowGrid/Properties/AssemblyInfo.cs"
+          (Get-Content $file) `
+            -replace 'AssemblyVersion\("[\d\.]+"\)', "AssemblyVersion(""$version"")" `
+            -replace 'AssemblyFileVersion\("[\d\.]+"\)', "AssemblyFileVersion(""$version"")" |
+            Set-Content $file -Encoding utf8
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build (Release)
+        run: msbuild FlowGrid.sln /p:Configuration=Release /m /v:m
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          $testDlls = Get-ChildItem -Recurse -Filter "*.Tests.dll" -Path . |
+            Where-Object { $_.FullName -match '\\bin\\Release\\' }
+          if ($testDlls) {
+            vstest.console.exe $testDlls.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            Write-Host "No test assemblies found - skipping."
+          }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            /DMyAppVersion=${{ steps.version.outputs.version }} installer\FlowGrid.iss
+
+      - name: Build portable ZIP
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $stage = "portable/FlowGrid"
+          New-Item -ItemType Directory -Force "$stage/Plugins" | Out-Null
+          Copy-Item FlowGrid/bin/Release/FlowGrid.exe, FlowGrid/bin/Release/FlowGrid.exe.config, FlowGrid/bin/Release/FlowGrid.Sdk.dll $stage
+          Copy-Item SampleWidgets/bin/Release/SampleWidgets.dll "$stage/Plugins"
+          Copy-Item LICENSE, THIRD-PARTY-NOTICES.md $stage
+          Set-Content "$stage/README-portable.txt" "Portable FlowGrid $version`r`nCopy the DLLs from .\Plugins to %LOCALAPPDATA%\FlowGrid\Plugins to use the sample widgets.`r`nUser data lives in %LOCALAPPDATA%\FlowGrid."
+          Compress-Archive -Path "portable/FlowGrid" -DestinationPath "FlowGrid-$version-portable.zip"
+
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $files = @("installer/Output/FlowGrid-Setup-$version.exe", "FlowGrid-$version-portable.zip")
+          $lines = $files | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), (Split-Path $_ -Leaf)
+          }
+          Set-Content SHA256SUMS.txt $lines -Encoding ascii
+
+      - name: Extract release notes from CHANGELOG
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $lines = Get-Content CHANGELOG.md
+          $start = ($lines | Select-String -Pattern "^## \[$([regex]::Escape($version))\]").LineNumber
+          if (-not $start) { throw "CHANGELOG.md has no section '## [$version]' - add it before tagging." }
+          $rest = $lines[$start..($lines.Count - 1)]
+          $end = ($rest | Select-String -Pattern "^## \[").LineNumber
+          $section = if ($end) { $rest[0..($end - 2)] } else { $rest }
+          Set-Content release-notes.md $section -Encoding utf8
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: FlowGrid ${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+          files: |
+            installer/Output/FlowGrid-Setup-${{ steps.version.outputs.version }}.exe
+            FlowGrid-${{ steps.version.outputs.version }}-portable.zip
+            SHA256SUMS.txt
