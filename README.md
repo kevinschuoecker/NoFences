@@ -1,6 +1,6 @@
 # FlowGrid
 
-<img width="1157" height="379" alt="image" src="https://github.com/user-attachments/assets/92870706-d0c0-41dd-ab18-dec26a30b383" />
+<img width="1919" height="1013" alt="image" src="https://github.com/user-attachments/assets/11d05179-8c98-4763-95dc-5e132cb8ccef" />
 
 ## Features
 
