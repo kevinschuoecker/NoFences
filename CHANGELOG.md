@@ -6,6 +6,15 @@ The release pipeline publishes the section matching the pushed tag.
 
 ## [Unreleased]
 
+### Fixed
+- Control-hosted widgets (e.g. Jira, third-party plugins) no longer
+  swallow the right-click: the fence context menu - including the
+  plugin's own entries like "Configure..." - now opens over the hosted
+  control unless the plugin brings its own menu
+- Fences hosting a plugin control stay movable and resizable: the host
+  resets a plugin's Dock setting (Dock=Fill used to cover the title bar
+  and resize borders) and keeps a grabbable frame around the control
+
 ## [0.9.1]
 
 ### Fixed
