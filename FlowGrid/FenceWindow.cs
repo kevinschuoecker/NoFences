@@ -121,21 +121,45 @@ namespace FlowGrid
                 hostedControl = controlWidget.CreateControl(widgetHost);
                 if (hostedControl == null)
                     return;
+
+                // The host owns layout. Plugins routinely set Dock = Fill, which
+                // would cover the title bar and the resize borders - the fence
+                // would become immovable and unresizable.
+                hostedControl.Dock = DockStyle.None;
+
                 Controls.Add(hostedControl);
                 PositionHostedControl();
+                AttachFenceMenu(hostedControl);
             }
-            catch
+            catch (Exception ex)
             {
                 // Fall back to the Render path, which shows the widget error.
+                Log.Error($"Plugin control creation failed: {fenceInfo.WidgetPlugin}", ex);
                 hostedControl = null;
             }
         }
 
         private void PositionHostedControl()
         {
-            var margin = LogicalToDeviceUnits(2);
+            // Leave a grabbable frame around the control so the fence's resize
+            // borders (10px hit zones) stay reachable.
+            var margin = LogicalToDeviceUnits(8);
             hostedControl.Location = new Point(margin, titleHeight + margin);
             hostedControl.Size = new Size(Math.Max(10, Width - 2 * margin), Math.Max(10, Height - titleHeight - 2 * margin));
+        }
+
+        /// <summary>
+        /// Hosted controls swallow mouse input, so the fence context menu (and with
+        /// it the plugin's own "Configure..." entries) would be unreachable. Attach
+        /// it to the control and every descendant that has no menu of its own.
+        /// </summary>
+        private void AttachFenceMenu(Control control)
+        {
+            if (control.ContextMenuStrip == null)
+                control.ContextMenuStrip = appContextMenu;
+            control.ControlAdded += (s, e) => AttachFenceMenu(e.Control);
+            foreach (Control child in control.Controls)
+                AttachFenceMenu(child);
         }
 
         private class WidgetHost : Sdk.IWidgetHost

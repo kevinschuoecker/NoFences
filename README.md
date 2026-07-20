@@ -92,6 +92,12 @@ public class MyEnterpriseWidget : IFlowGridControlWidget
 }
 ```
 
+Control hosting rules: **the host owns layout** — do not set `Dock` on your
+root control (it is reset), the fence positions and resizes it and keeps a
+small frame so the fence stays movable/resizable. Right-click shows the
+fence menu (including your `GetMenuItems` entries) unless a control brings
+its own `ContextMenuStrip`.
+
 The `SampleWidgets` project contains working examples: system uptime, weather (open-meteo, keyless, location via context menu), a **system monitor** (CPU/RAM/GPU/VRAM/disks with clickable toggle chips) and a **stock/ETF watchlist** (Yahoo Finance, keyless): per-fence symbol lists managed via the "+" button and the context menu, clickable rows opening a detail page with a one-month price chart. The **Jira widget** is the enterprise blueprint: configure URL/e-mail/API token via the context menu (token stored encrypted), your open issues appear in a dark-styled table, double-click opens the issue in the browser. Plugin exceptions are caught and shown inside the fence, so a broken widget cannot crash the app. **Plugins run with full trust — only install DLLs you wrote or trust.**
 
 Fence layout and settings are stored per fence in `%LOCALAPPDATA%\FlowGrid`. On first start, data from a previous NoFences installation (`%LOCALAPPDATA%\NoFences`) is migrated automatically — close the old app before launching FlowGrid so the move succeeds.
