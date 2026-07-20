@@ -6,6 +6,12 @@ The release pipeline publishes the section matching the pushed tag.
 
 ## [Unreleased]
 
+## [0.9.0]
+
+Public beta preview of the 1.0 feature set (see below). Not for production
+use yet - please report issues with the newest log file from
+`%LOCALAPPDATA%\FlowGrid\Logs` attached.
+
 ## [1.0.0]
 
 First FlowGrid release (formerly NoFences).
