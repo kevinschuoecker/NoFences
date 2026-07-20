@@ -79,6 +79,19 @@ public IList<WidgetMenuItem> GetMenuItems(IWidgetHost host)
 host.RequestRefresh();   // safe from any thread
 ```
 
-The `SampleWidgets` project contains working examples: system uptime, weather (open-meteo, keyless, location via context menu), a **system monitor** (CPU/RAM/GPU/VRAM/disks with clickable toggle chips) and a **stock/ETF watchlist** (Yahoo Finance, keyless): per-fence symbol lists managed via the "+" button and the context menu, clickable rows opening a detail page with a one-month price chart. Plugin exceptions are caught and shown inside the fence, so a broken widget cannot crash the app. **Plugins run with full trust — only install DLLs you wrote or trust.**
+**SDK v4**: implement `IFlowGridControlWidget` to host a **real WinForms control** inside the fence — tables (`DataGridView`), forms, WebView2, anything. `CreateControl` is called once per fence, so instances stay independent. For API integrations, `host.GetSecret`/`host.SetSecret` store tokens **DPAPI-encrypted** (bound to the Windows user, scoped per widget type, never part of layout exports):
+
+```csharp
+public class MyEnterpriseWidget : IFlowGridControlWidget
+{
+    public Control CreateControl(IWidgetHost host)
+    {
+        var token = host.GetSecret("api-token");   // null until configured
+        return new MyDashboardControl(host);       // any WinForms control
+    }
+}
+```
+
+The `SampleWidgets` project contains working examples: system uptime, weather (open-meteo, keyless, location via context menu), a **system monitor** (CPU/RAM/GPU/VRAM/disks with clickable toggle chips) and a **stock/ETF watchlist** (Yahoo Finance, keyless): per-fence symbol lists managed via the "+" button and the context menu, clickable rows opening a detail page with a one-month price chart. The **Jira widget** is the enterprise blueprint: configure URL/e-mail/API token via the context menu (token stored encrypted), your open issues appear in a dark-styled table, double-click opens the issue in the browser. Plugin exceptions are caught and shown inside the fence, so a broken widget cannot crash the app. **Plugins run with full trust — only install DLLs you wrote or trust.**
 
 Fence layout and settings are stored per fence in `%LOCALAPPDATA%\FlowGrid`. On first start, data from a previous NoFences installation (`%LOCALAPPDATA%\NoFences`) is migrated automatically — close the old app before launching FlowGrid so the move succeeds.

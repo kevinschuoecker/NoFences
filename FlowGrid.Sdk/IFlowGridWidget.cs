@@ -56,6 +56,22 @@ namespace FlowGrid.Sdk
     }
 
     /// <summary>
+    /// SDK v4: widgets that host a real WinForms control inside the fence instead
+    /// of drawing. Unlocks tables (DataGridView), forms, WebView2 and anything
+    /// else WinForms can do. Render() is only used as a fallback (e.g. while the
+    /// control could not be created) and may be empty.
+    /// </summary>
+    public interface IFlowGridControlWidget : IFlowGridWidget
+    {
+        /// <summary>
+        /// Called once per hosting fence - return a NEW control instance each time
+        /// so multiple fences of the same widget stay independent. The fence docks
+        /// the control into its content area and disposes it when it closes.
+        /// </summary>
+        System.Windows.Forms.Control CreateControl(IWidgetHost host);
+    }
+
+    /// <summary>
     /// A context menu entry contributed by a widget.
     /// </summary>
     public class WidgetMenuItem
@@ -106,5 +122,18 @@ namespace FlowGrid.Sdk
         /// immediately instead of waiting for the next refresh tick.
         /// </summary>
         void RequestRefresh();
+
+        /// <summary>
+        /// Reads a secret stored via <see cref="SetSecret"/> (SDK v4). Returns null
+        /// if no such secret exists. Secrets are scoped to the widget type.
+        /// </summary>
+        string GetSecret(string name);
+
+        /// <summary>
+        /// Stores a secret (API tokens, passwords) encrypted with Windows DPAPI,
+        /// bound to the current Windows user (SDK v4). Never lands in plain text
+        /// and is not part of layout exports. Pass null or empty to delete.
+        /// </summary>
+        void SetSecret(string name, string value);
     }
 }

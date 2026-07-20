@@ -31,6 +31,12 @@ namespace FlowGrid.Win32
         public static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
         public const int WM_WINDOWPOSCHANGING = 0x0046;
 
+        /// <summary>Broadcast to all top-level windows when Explorer (re)starts.</summary>
+        public static readonly int WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int RegisterWindowMessage(string message);
+
         [DllImport("user32.dll")]
         public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X,
            int Y, int cx, int cy, uint uFlags);
