@@ -531,12 +531,13 @@ namespace FlowGrid
         private void EnsureOnScreen()
         {
             // "Reachable" means at least part of the title bar is on a visible screen.
+            // MonitorUtil queries Win32 directly: Screen.AllScreens is cached by the
+            // framework and reports a stale layout right after display changes.
             var titleBar = new Rectangle(Location, new Size(Width, Math.Max(titleHeight, 20)));
-            foreach (var screen in Screen.AllScreens)
-                if (screen.WorkingArea.IntersectsWith(titleBar))
-                    return;
+            if (MonitorUtil.IntersectsAnyMonitor(titleBar))
+                return;
 
-            var area = Screen.PrimaryScreen.WorkingArea;
+            var area = MonitorUtil.GetNearestWorkArea(titleBar);
             var rescued = new Point(
                 Math.Max(area.Left, Math.Min(Location.X, area.Right - Width)),
                 Math.Max(area.Top, Math.Min(Location.Y, area.Bottom - titleHeight)));
@@ -1175,6 +1176,7 @@ namespace FlowGrid
         {
             if (MessageBox.Show(this, "Really remove this fence?", "Remove", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
+                SuppressPersistence = true;
                 // Give the desktop its icons back before the fence disappears.
                 foreach (var file in fenceInfo.EnumerateAllFiles())
                     DesktopIconHider.Unhide(file);
@@ -1904,15 +1906,41 @@ namespace FlowGrid
 
         private void FenceWindow_FormClosed(object sender, FormClosedEventArgs e)
         {
+            // Persist pending debounced state before tearing down (no-ops when
+            // SuppressPersistence is set, e.g. during fence removal).
+            throttledMove.Flush();
+            throttledResize.Flush();
+            if (noteBox != null && !SuppressPersistence)
+                SaveNoteText();
+            throttledNoteSave.Cancel();
+
             // App exit on last closed fence is handled by FenceManager;
             // Application.OpenForms is unreliable with recreated handles.
             portalWatcher?.Dispose();
             hostedControl?.Dispose();
+
+            // WinForms timers keep firing against closed windows unless disposed.
+            animTimer.Dispose();
+            highlightTimer.Dispose();
+            widgetTimer?.Dispose();
+            cpuCounter?.Dispose();
+            throttledMove.Dispose();
+            throttledResize.Dispose();
+            throttledNoteSave.Dispose();
         }
+
+        /// <summary>
+        /// Set while this fence is being removed (delete, layout import). Blocks
+        /// all further saves so a pending debounced save cannot resurrect the
+        /// just-deleted metadata folder.
+        /// </summary>
+        public bool SuppressPersistence { get; set; }
 
         private readonly object saveLock = new object();
         private void Save()
         {
+            if (SuppressPersistence)
+                return;
             lock (saveLock)
             {
                 FenceManager.Instance.UpdateFence(fenceInfo);
