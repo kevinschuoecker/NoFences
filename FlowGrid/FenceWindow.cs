@@ -119,6 +119,73 @@ namespace FlowGrid
                     owner.Save();
                 }
             }
+
+            public string PromptText(string title, string description, string initialValue)
+            {
+                using (var dialog = new PromptDialog(title ?? "", description ?? "", initialValue ?? ""))
+                    return dialog.ShowDialog(owner) == DialogResult.OK ? dialog.Value : null;
+            }
+
+            public void RequestRefresh()
+            {
+                try
+                {
+                    owner.BeginInvoke((Action)owner.Invalidate);
+                }
+                catch
+                {
+                    // Window is closing - nothing to refresh.
+                }
+            }
+        }
+
+        // Context menu entries contributed by an SDK v3 plugin (rebuilt on every open).
+        private readonly List<ToolStripItem> pluginContextItems = new List<ToolStripItem>();
+
+        private void UpdatePluginContextItems()
+        {
+            foreach (var item in pluginContextItems)
+                appContextMenu.Items.Remove(item);
+            pluginContextItems.Clear();
+
+            if (!(pluginWidget is Sdk.IFlowGridWidget3 contributor))
+                return;
+
+            try
+            {
+                var items = contributor.GetMenuItems(widgetHost);
+                if (items == null || items.Count == 0)
+                    return;
+
+                var index = 0;
+                foreach (var item in items)
+                {
+                    var menuItem = new ToolStripMenuItem(item.Text ?? "");
+                    var action = item.OnClick;
+                    menuItem.Click += (s, e) =>
+                    {
+                        try
+                        {
+                            action?.Invoke();
+                        }
+                        catch
+                        {
+                            // A faulty plugin must never take the fence down.
+                        }
+                        Invalidate();
+                    };
+                    appContextMenu.Items.Insert(index, menuItem);
+                    pluginContextItems.Add(menuItem);
+                    index++;
+                }
+                var separator = new ToolStripSeparator();
+                appContextMenu.Items.Insert(index, separator);
+                pluginContextItems.Add(separator);
+            }
+            catch
+            {
+                // Ignore faulty menu contributions.
+            }
         }
 
         // Animation state: content scale while dragging the window plus release bounce,
@@ -952,6 +1019,8 @@ namespace FlowGrid
 
         private void contextMenuStrip1_Opening(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            UpdatePluginContextItems();
+
             // In portal mode items are real files, so "remove from fence" makes no sense.
             deleteItemToolStripMenuItem.Visible = hoveringItem != null && !IsPortal;
 

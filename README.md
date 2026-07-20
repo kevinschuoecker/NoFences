@@ -61,6 +61,24 @@ public bool OnClick(Point location, Rectangle area, IWidgetHost host)
 }
 ```
 
-The `SampleWidgets` project contains working examples: system uptime, weather (open-meteo, keyless), a **system monitor** (CPU/RAM/GPU/VRAM/disks with clickable toggle chips) and a **stock/ETF ticker** (Yahoo Finance, keyless; symbols in `Plugins\stocks.txt`, click to refresh). Plugin exceptions are caught and shown inside the fence, so a broken widget cannot crash the app. **Plugins run with full trust — only install DLLs you wrote or trust.**
+**SDK v3**: implement `IFlowGridWidget3` to contribute entries to the fence's right-click menu, ask the user for text input and request repaints from background threads:
+
+```csharp
+public IList<WidgetMenuItem> GetMenuItems(IWidgetHost host)
+{
+    return new List<WidgetMenuItem>
+    {
+        new WidgetMenuItem("Configure...", () =>
+        {
+            var input = host.PromptText("Configure", "Enter a value:", "");
+            if (input != null) host.Settings = input;
+        })
+    };
+}
+// ...and after an async fetch completes:
+host.RequestRefresh();   // safe from any thread
+```
+
+The `SampleWidgets` project contains working examples: system uptime, weather (open-meteo, keyless, location via context menu), a **system monitor** (CPU/RAM/GPU/VRAM/disks with clickable toggle chips) and a **stock/ETF watchlist** (Yahoo Finance, keyless): per-fence symbol lists managed via the "+" button and the context menu, clickable rows opening a detail page with a one-month price chart. Plugin exceptions are caught and shown inside the fence, so a broken widget cannot crash the app. **Plugins run with full trust — only install DLLs you wrote or trust.**
 
 Fence layout and settings are stored per fence in `%LOCALAPPDATA%\FlowGrid`. On first start, data from a previous NoFences installation (`%LOCALAPPDATA%\NoFences`) is migrated automatically — close the old app before launching FlowGrid so the move succeeds.
