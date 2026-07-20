@@ -78,6 +78,9 @@
     <Compile Include="FenceWindow.Designer.cs">
       <DependentUpon>FenceWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="CrashDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="PromptDialog.cs">
       <SubType>Form</SubType>
@@ -88,7 +91,9 @@
     <Compile Include="Util\DesktopAutoSorter.cs" />
     <Compile Include="Util\DesktopIconHider.cs" />
     <Compile Include="Util\Extensions.cs" />
+    <Compile Include="Util\Log.cs" />
     <Compile Include="Util\PluginManager.cs" />
+    <Compile Include="Util\SafeStorage.cs" />
     <Compile Include="Util\SecretStore.cs" />
     <Compile Include="Util\ThrottledExecution.cs" />
     <Compile Include="Util\ThumbnailProvider.cs" />
