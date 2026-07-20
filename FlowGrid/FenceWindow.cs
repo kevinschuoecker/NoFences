@@ -33,7 +33,15 @@ namespace FlowGrid
 
         private FileSystemWatcher portalWatcher;
 
-        private bool IsPortal => !string.IsNullOrEmpty(fenceInfo.TargetFolder) && Directory.Exists(fenceInfo.TargetFolder);
+        /// <summary>
+        /// The portal root of the current view: with tabs, each tab can be its own
+        /// portal; without tabs the fence-level folder applies.
+        /// </summary>
+        private string ActiveTargetFolder => HasTabs
+            ? (fenceInfo.Tabs[ClampActiveTab()].TargetFolder ?? "")
+            : (fenceInfo.TargetFolder ?? "");
+
+        private bool IsPortal => !string.IsNullOrEmpty(ActiveTargetFolder) && Directory.Exists(ActiveTargetFolder);
 
         private Font titleFont;
         private Font iconFont;
@@ -61,7 +69,7 @@ namespace FlowGrid
         // Transient navigation inside a folder portal (null = portal root).
         private string portalCurrentPath;
 
-        private string CurrentPortalFolder => portalCurrentPath ?? fenceInfo.TargetFolder;
+        private string CurrentPortalFolder => portalCurrentPath ?? ActiveTargetFolder;
 
         // Items added recently get a short visual highlight.
         private readonly Dictionary<string, DateTime> recentItems = new Dictionary<string, DateTime>();
@@ -78,8 +86,8 @@ namespace FlowGrid
         private bool IsWidget => fenceInfo.FenceType >= 2;
         private bool IsNormal => fenceInfo.FenceType == 0;
 
-        // Tabs.
-        private bool HasTabs => IsNormal && !IsPortal && fenceInfo.Tabs.Count > 0;
+        // Tabs. Independent of portals: a tab can itself be a portal.
+        private bool HasTabs => IsNormal && fenceInfo.Tabs.Count > 0;
         private int TabStripHeight => HasTabs ? LogicalToDeviceUnits(26) : 0;
         private int ContentTop => titleHeight + TabStripHeight;
 
@@ -531,7 +539,7 @@ namespace FlowGrid
         private void NavigateUp()
         {
             var parent = Path.GetDirectoryName(CurrentPortalFolder);
-            portalCurrentPath = (parent == null || string.Equals(parent, fenceInfo.TargetFolder, StringComparison.OrdinalIgnoreCase))
+            portalCurrentPath = (parent == null || string.Equals(parent, ActiveTargetFolder, StringComparison.OrdinalIgnoreCase))
                 ? null
                 : parent;
             scrollOffset = 0;
@@ -782,6 +790,9 @@ namespace FlowGrid
                 {
                     fenceInfo.ActiveTab = hit.Index;
                     scrollOffset = 0;
+                    // The new tab may be (or not be) a portal - reset portal state.
+                    portalCurrentPath = null;
+                    SetupPortalWatcher();
                     Save();
                     Refresh();
                 }
@@ -802,6 +813,8 @@ namespace FlowGrid
                 {
                     fenceInfo.ActiveTab = hit.Index;
                     scrollOffset = 0;
+                    portalCurrentPath = null;
+                    SetupPortalWatcher();
                     Refresh();
                     break;
                 }
@@ -849,29 +862,34 @@ namespace FlowGrid
 
         private void ConfigurePortal()
         {
-            if (!string.IsNullOrEmpty(fenceInfo.TargetFolder))
+            var current = ActiveTargetFolder;
+            var scope = HasTabs ? "this tab" : "this fence";
+
+            if (!string.IsNullOrEmpty(current))
             {
-                if (MessageBox.Show(this, "This fence mirrors\n" + fenceInfo.TargetFolder + "\n\nDisable the folder portal?",
+                if (MessageBox.Show(this, "Currently mirroring\n" + current + "\n\nDisable the folder portal for " + scope + "?",
                         "Folder portal", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                {
-                    fenceInfo.TargetFolder = "";
-                    SetupPortalWatcher();
-                    Save();
-                    Refresh();
-                }
+                    SetActiveTargetFolder("");
                 return;
             }
 
-            using (var dialog = new FolderBrowserDialog { Description = "Choose a folder to display inside this fence (e.g. Downloads)." })
+            using (var dialog = new FolderBrowserDialog { Description = "Choose a folder to display inside " + scope + " (e.g. Downloads)." })
             {
                 if (dialog.ShowDialog(this) == DialogResult.OK)
-                {
-                    fenceInfo.TargetFolder = dialog.SelectedPath;
-                    SetupPortalWatcher();
-                    Save();
-                    Refresh();
-                }
+                    SetActiveTargetFolder(dialog.SelectedPath);
             }
+        }
+
+        private void SetActiveTargetFolder(string folder)
+        {
+            if (HasTabs)
+                fenceInfo.Tabs[ClampActiveTab()].TargetFolder = folder;
+            else
+                fenceInfo.TargetFolder = folder;
+            portalCurrentPath = null;
+            SetupPortalWatcher();
+            Save();
+            Refresh();
         }
 
         private void ConfigureRules()
@@ -892,7 +910,7 @@ namespace FlowGrid
         {
             portalWatcher?.Dispose();
             portalWatcher = null;
-            portalFiles = null;
+            portalEntries = null;
 
             if (!IsPortal)
             {
@@ -921,12 +939,86 @@ namespace FlowGrid
             }
         }
 
-        private List<string> portalFiles;
+        // Portal contents are enumerated on a background thread: attributes and
+        // timestamps are captured during enumeration, so painting a huge folder
+        // costs no per-item filesystem calls and never blocks the UI.
+        private class PortalEntry
+        {
+            public string Path;
+            public bool IsFolder;
+            public DateTime LastWrite;
+        }
+
+        private List<PortalEntry> portalEntries; // null = not loaded yet
+        private volatile bool portalLoading;
 
         private void RefreshPortal()
         {
-            portalFiles = null;
+            portalEntries = null;
             Invalidate();
+        }
+
+        private void EnsurePortalEntriesLoaded()
+        {
+            if (!IsPortal || portalEntries != null || portalLoading)
+                return;
+            portalLoading = true;
+
+            var folder = CurrentPortalFolder;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                var entries = new List<PortalEntry>();
+                try
+                {
+                    foreach (var info in new DirectoryInfo(folder).EnumerateFileSystemInfos())
+                    {
+                        if ((info.Attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+                            continue;
+                        entries.Add(new PortalEntry
+                        {
+                            Path = info.FullName,
+                            IsFolder = info is DirectoryInfo,
+                            LastWrite = info.LastWriteTime
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"Portal enumeration failed for {folder}: {ex.Message}");
+                }
+
+                try
+                {
+                    BeginInvoke((Action)(() =>
+                    {
+                        // Discard the result if the user navigated elsewhere meanwhile.
+                        if (string.Equals(folder, CurrentPortalFolder, StringComparison.OrdinalIgnoreCase))
+                            portalEntries = entries;
+                        portalLoading = false;
+                        Invalidate();
+                    }));
+                }
+                catch
+                {
+                    portalLoading = false; // window closed
+                }
+            });
+        }
+
+        private IEnumerable<PortalEntry> SortedPortalEntries()
+        {
+            switch (fenceInfo.SortMode)
+            {
+                case 1:
+                    return portalEntries.OrderBy(p => Path.GetFileName(p.Path), StringComparer.OrdinalIgnoreCase);
+                case 2:
+                    return portalEntries.OrderBy(p => p.IsFolder ? "" : Path.GetExtension(p.Path), StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(p => Path.GetFileName(p.Path), StringComparer.OrdinalIgnoreCase);
+                case 3:
+                    return portalEntries.OrderByDescending(p => p.LastWrite);
+                default:
+                    return portalEntries;
+            }
         }
 
         /// <summary>The mutable item list of the active tab (or the flat list when untabbed).</summary>
@@ -934,23 +1026,7 @@ namespace FlowGrid
 
         private IEnumerable<string> CurrentFiles()
         {
-            if (!IsPortal)
-                return ApplySort(CurrentFileList);
-
-            if (portalFiles == null)
-            {
-                try
-                {
-                    portalFiles = Directory.EnumerateFileSystemEntries(CurrentPortalFolder)
-                        .Where(p => (new FileInfo(p).Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0)
-                        .ToList();
-                }
-                catch
-                {
-                    portalFiles = new List<string>();
-                }
-            }
-            return ApplySort(portalFiles);
+            return ApplySort(CurrentFileList);
         }
 
         private IEnumerable<string> ApplySort(IEnumerable<string> files)
@@ -1111,7 +1187,7 @@ namespace FlowGrid
             smallIconsMenuItem.Checked = iconSize == 32;
             mediumIconsMenuItem.Checked = iconSize == 48;
             largeIconsMenuItem.Checked = iconSize == 64;
-            portalMenuItem.Text = string.IsNullOrEmpty(fenceInfo.TargetFolder) ? "Folder portal..." : "Disable folder portal...";
+            portalMenuItem.Text = string.IsNullOrEmpty(ActiveTargetFolder) ? "Folder portal..." : "Disable folder portal...";
 
             for (var i = 0; i < sortMenuItem.DropDownItems.Count; i++)
                 ((ToolStripMenuItem)sortMenuItem.DropDownItems[i]).Checked = fenceInfo.SortMode == i;
@@ -1124,7 +1200,7 @@ namespace FlowGrid
             iconSizeMenuItem.Visible = IsNormal;
             portalMenuItem.Visible = IsNormal;
             rulesMenuItem.Visible = IsNormal;
-            tabsMenuItem.Visible = IsNormal && !IsPortal;
+            tabsMenuItem.Visible = IsNormal;
             minifyToolStripMenuItem.Visible = !IsNote;
         }
 
@@ -1361,6 +1437,22 @@ namespace FlowGrid
 
             if (HasTabs)
                 RenderTabStrip(e.Graphics);
+
+            // Large portal folders load in the background - show progress instead of blocking.
+            if (IsPortal)
+            {
+                EnsurePortalEntriesLoaded();
+                if (portalEntries == null)
+                {
+                    e.Graphics.Clip = new Region(new Rectangle(0, ContentTop, Width, Height - ContentTop));
+                    using (var brush = new SolidBrush(Color.FromArgb(180, Color.White)))
+                        e.Graphics.DrawString("Loading folder...", iconFont, brush,
+                            new RectangleF(0, ContentTop, Width, Math.Max(0, Height - ContentTop)),
+                            new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+                    ResetClickFlags();
+                    return;
+                }
+            }
 
             // Items
             var x = itemPadding;
@@ -1642,13 +1734,37 @@ namespace FlowGrid
             var items = new List<RenderItem>();
             var query = SearchQuery;
 
-            // Inside a navigated portal, the first tile goes back up.
-            if (IsPortal && portalCurrentPath != null)
+            if (IsPortal)
             {
-                var parent = Path.GetDirectoryName(CurrentPortalFolder) ?? fenceInfo.TargetFolder;
-                var upEntry = FenceEntry.FromPath(parent);
-                if (upEntry != null)
-                    items.Add(new RenderItem { Entry = upEntry, Name = "..", Open = NavigateUp });
+                // Inside a navigated portal, the first tile goes back up.
+                if (portalCurrentPath != null)
+                {
+                    var parent = Path.GetDirectoryName(CurrentPortalFolder) ?? ActiveTargetFolder;
+                    items.Add(new RenderItem
+                    {
+                        Entry = FenceEntry.FromKnownType(parent, EntryType.Folder),
+                        Name = "..",
+                        Open = NavigateUp
+                    });
+                }
+
+                if (portalEntries == null)
+                    return items;
+
+                foreach (var portalEntry in SortedPortalEntries())
+                {
+                    var entry = FenceEntry.FromKnownType(portalEntry.Path,
+                        portalEntry.IsFolder ? EntryType.Folder : EntryType.File);
+                    if (query.Length > 0 && entry.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
+                    // Portal folders navigate within the fence instead of opening Explorer.
+                    var open = portalEntry.IsFolder
+                        ? () => NavigateInto(entry.Path)
+                        : (Action)entry.Open;
+                    items.Add(new RenderItem { Entry = entry, Name = entry.Name, Open = open });
+                }
+                return items;
             }
 
             foreach (var file in CurrentFiles())
@@ -1658,12 +1774,7 @@ namespace FlowGrid
                     continue;
                 if (query.Length > 0 && entry.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
-
-                // Portal folders navigate within the fence instead of opening Explorer.
-                var open = (IsPortal && entry.Type == EntryType.Folder)
-                    ? () => NavigateInto(entry.Path)
-                    : (Action)entry.Open;
-                items.Add(new RenderItem { Entry = entry, Name = entry.Name, Open = open });
+                items.Add(new RenderItem { Entry = entry, Name = entry.Name, Open = entry.Open });
             }
             return items;
         }

@@ -204,15 +204,22 @@ namespace FlowGrid.Model
             foreach (var window in windows)
             {
                 var info = window.FenceInfo;
-                if (info.FenceType != 0 || !string.IsNullOrEmpty(info.TargetFolder))
+                if (info.FenceType != 0)
+                    continue;
+                // Portals mirror real folders and cannot receive fence items.
+                if (info.Tabs.Count == 0 && !string.IsNullOrEmpty(info.TargetFolder))
                     continue;
                 if (!Util.WildcardMatcher.MatchesAny(info.AutoSortPatterns, fileName))
                     continue;
                 if (info.EnumerateAllFiles().Contains(path))
                     return;
 
-                // With tabs, auto-sorted items land in the first tab.
-                var target = info.Tabs.Count > 0 ? info.Tabs[0].Files : info.Files;
+                // With tabs, auto-sorted items land in the first non-portal tab.
+                var target = info.Tabs.Count > 0
+                    ? info.Tabs.FirstOrDefault(t => string.IsNullOrEmpty(t.TargetFolder))?.Files
+                    : info.Files;
+                if (target == null)
+                    continue;
                 target.Add(path);
                 UpdateFence(info);
                 Util.DesktopIconHider.HideIfEnabled(path);
