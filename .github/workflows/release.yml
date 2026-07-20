@@ -88,10 +88,12 @@ jobs:
         run: |
           $version = "${{ steps.version.outputs.version }}"
           $lines = Get-Content CHANGELOG.md
-          $start = ($lines | Select-String -Pattern "^## \[$([regex]::Escape($version))\]").LineNumber
+          # Select-Object -First 1: with multiple following sections Select-String
+          # returns an array and the arithmetic below would fail.
+          $start = ($lines | Select-String -Pattern "^## \[$([regex]::Escape($version))\]" | Select-Object -First 1).LineNumber
           if (-not $start) { throw "CHANGELOG.md has no section '## [$version]' - add it before tagging." }
           $rest = $lines[$start..($lines.Count - 1)]
-          $end = ($rest | Select-String -Pattern "^## \[").LineNumber
+          $end = ($rest | Select-String -Pattern "^## \[" | Select-Object -First 1).LineNumber
           $section = if ($end) { $rest[0..($end - 2)] } else { $rest }
           Set-Content release-notes.md $section -Encoding utf8
 
