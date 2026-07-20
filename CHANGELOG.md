@@ -4,6 +4,8 @@ All notable changes to FlowGrid are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com); versions follow SemVer.
 The release pipeline publishes the section matching the pushed tag.
 
+## [Unreleased]
+
 ## [0.9.1]
 
 ### Fixed
