@@ -102,6 +102,33 @@ namespace FlowGrid
         // Plugin widget hosting (FenceType 100).
         private Sdk.IFlowGridWidget pluginWidget;
         private WidgetHost widgetHost;
+        private Control hostedControl;
+
+        private void InitHostedControl()
+        {
+            if (!(pluginWidget is Sdk.IFlowGridControlWidget controlWidget))
+                return;
+            try
+            {
+                hostedControl = controlWidget.CreateControl(widgetHost);
+                if (hostedControl == null)
+                    return;
+                Controls.Add(hostedControl);
+                PositionHostedControl();
+            }
+            catch
+            {
+                // Fall back to the Render path, which shows the widget error.
+                hostedControl = null;
+            }
+        }
+
+        private void PositionHostedControl()
+        {
+            var margin = LogicalToDeviceUnits(2);
+            hostedControl.Location = new Point(margin, titleHeight + margin);
+            hostedControl.Size = new Size(Math.Max(10, Width - 2 * margin), Math.Max(10, Height - titleHeight - 2 * margin));
+        }
 
         private class WidgetHost : Sdk.IWidgetHost
         {
@@ -137,6 +164,14 @@ namespace FlowGrid
                     // Window is closing - nothing to refresh.
                 }
             }
+
+            // Secrets are scoped to the widget type so plugins cannot read each other's tokens.
+            private string SecretKey(string name)
+                => (owner.pluginWidget?.GetType().FullName ?? "unknown") + "." + name;
+
+            public string GetSecret(string name) => SecretStore.Get(SecretKey(name));
+
+            public void SetSecret(string name, string value) => SecretStore.Set(SecretKey(name), value);
         }
 
         // Context menu entries contributed by an SDK v3 plugin (rebuilt on every open).
@@ -272,8 +307,9 @@ namespace FlowGrid
             {
                 pluginWidget = PluginManager.Find(fenceInfo.WidgetPlugin);
                 widgetHost = new WidgetHost(this);
+                InitHostedControl();
             }
-            if (IsWidget)
+            if (IsWidget && hostedControl == null)
                 InitWidgetTimer();
 
             highlightTimer.Tick += (s, e) =>
@@ -1148,6 +1184,8 @@ namespace FlowGrid
                 PositionSearchBox();
             if (noteBox != null)
                 PositionNoteBox();
+            if (hostedControl != null)
+                PositionHostedControl();
 
             throttledResize.Run(() =>
             {
@@ -1255,7 +1293,9 @@ namespace FlowGrid
 
             if (IsWidget)
             {
-                RenderWidget(e.Graphics);
+                // A hosted control paints itself; only the Render path draws here.
+                if (hostedControl == null)
+                    RenderWidget(e.Graphics);
                 ResetClickFlags();
                 return;
             }
@@ -1683,6 +1723,7 @@ namespace FlowGrid
             // App exit on last closed fence is handled by FenceManager;
             // Application.OpenForms is unreliable with recreated handles.
             portalWatcher?.Dispose();
+            hostedControl?.Dispose();
         }
 
         private readonly object saveLock = new object();
