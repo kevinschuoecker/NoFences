@@ -42,7 +42,7 @@ namespace FlowGrid
                     // Opacity, which recreates window handles and silently drops forms
                     // from OpenForms - making it report 0 even with fences loaded.
                     if (FenceManager.Instance.Windows.Count == 0)
-                        FenceManager.Instance.CreateFence("First fence");
+                        FenceManager.Instance.CreateWelcomeFences();
 
                     DesktopAutoSorter.Start();
 

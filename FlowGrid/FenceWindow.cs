@@ -300,6 +300,13 @@ namespace FlowGrid
             this.ResizeEnd += (s, e) => SnapToNeighbors();
             this.DragOver += FenceWindow_DragOver;
 
+            // A fence stranded outside every monitor is unrecoverable for the user
+            // (no taskbar entry, no Alt-Tab) - rescue it at startup and whenever
+            // the monitor layout changes.
+            EnsureOnScreen();
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+            FormClosed += (s, e) => Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+
             InitAnimations();
             if (IsNote)
                 InitNoteBox();
@@ -474,6 +481,35 @@ namespace FlowGrid
             {
                 return -1;
             }
+        }
+
+        private void OnDisplaySettingsChanged(object sender, EventArgs e)
+        {
+            // SystemEvents may fire on a non-UI thread.
+            try
+            {
+                BeginInvoke((Action)EnsureOnScreen);
+            }
+            catch
+            {
+                // Window is closing.
+            }
+        }
+
+        private void EnsureOnScreen()
+        {
+            // "Reachable" means at least part of the title bar is on a visible screen.
+            var titleBar = new Rectangle(Location, new Size(Width, Math.Max(titleHeight, 20)));
+            foreach (var screen in Screen.AllScreens)
+                if (screen.WorkingArea.IntersectsWith(titleBar))
+                    return;
+
+            var area = Screen.PrimaryScreen.WorkingArea;
+            var rescued = new Point(
+                Math.Max(area.Left, Math.Min(Location.X, area.Right - Width)),
+                Math.Max(area.Top, Math.Min(Location.Y, area.Bottom - titleHeight)));
+            Log.Warn($"Fence '{fenceInfo.Name}' was off-screen at {Location} - moved to {rescued}.");
+            Location = rescued;
         }
 
         /// <summary>Marks an item as freshly added so it gets a short highlight.</summary>
@@ -984,6 +1020,18 @@ namespace FlowGrid
             if (m.Msg == 0x0232) // WM_EXITSIZEMOVE
                 OnWindowDragEnded();
 
+            // Explorer restarted: our desktop anchor (Progman) is a dead handle now.
+            // Re-glue and restore the styling, otherwise fences misbehave until app restart.
+            if (m.Msg == WindowUtil.WM_TASKBARCREATED)
+            {
+                Log.Info("Explorer restarted - re-anchoring fence to the desktop.");
+                DesktopUtil.GlueToDesktop(Handle);
+                BlurUtil.EnableBlur(Handle);
+                BlurUtil.TryEnableRoundedCorners(Handle);
+                WindowUtil.HideFromAltTab(Handle);
+                SetWindowPos(Handle, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
+            }
+
             // Other messages
             base.WndProc(ref m);
 
@@ -1195,7 +1243,7 @@ namespace FlowGrid
                 Save();
             });
 
-            Refresh();
+            Invalidate();
         }
 
         private void FenceWindow_MouseMove(object sender, MouseEventArgs e)
@@ -1210,7 +1258,10 @@ namespace FlowGrid
                     ClampScrollOffset();
                 }
             }
-            Refresh();
+            // Invalidate (coalesced) instead of Refresh (synchronous): mouse moves
+            // arrive far faster than we need to repaint, and a forced full repaint
+            // per move burns CPU on portal enumeration and icon lookups.
+            Invalidate();
         }
 
         private void FenceWindow_MouseEnter(object sender, EventArgs e)
@@ -1226,7 +1277,7 @@ namespace FlowGrid
         {
             Minify();
             selectedItem = null;
-            Refresh();
+            Invalidate();
         }
 
         private void Minify()
@@ -1260,13 +1311,13 @@ namespace FlowGrid
         private void FenceWindow_Click(object sender, EventArgs e)
         {
             shouldUpdateSelection = true;
-            Refresh();
+            Invalidate();
         }
 
         private void FenceWindow_DoubleClick(object sender, EventArgs e)
         {
             shouldRunDoubleClick = true;
-            Refresh();
+            Invalidate();
         }
 
         private void FenceWindow_Paint(object sender, PaintEventArgs e)
@@ -1285,11 +1336,13 @@ namespace FlowGrid
 
             // Background (tinted with the custom fence color and per-fence opacity)
             var bgAlpha = Math.Max(0, Math.Min(255, fenceInfo.Transparency * 255 / 100));
-            e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(bgAlpha, baseColor)), ClientRectangle);
+            using (var background = new SolidBrush(Color.FromArgb(bgAlpha, baseColor)))
+                e.Graphics.FillRectangle(background, ClientRectangle);
 
             // Title
             e.Graphics.DrawString(Text, titleFont, Brushes.White, new PointF(Width / 2, titleOffset), new StringFormat { Alignment = StringAlignment.Center });
-            e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(50, Color.Black)), new RectangleF(0, 0, Width, titleHeight));
+            using (var titleOverlay = new SolidBrush(Color.FromArgb(50, Color.Black)))
+                e.Graphics.FillRectangle(titleOverlay, new RectangleF(0, 0, Width, titleHeight));
 
             if (IsWidget)
             {
@@ -1337,8 +1390,10 @@ namespace FlowGrid
             {
                 scrollOffset = Math.Min(scrollOffset, scrollHeight);
                 e.Graphics.Clip = new Region(ClientRectangle);
-                e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(40, Color.White)), ScrollbarTrackRect);
-                e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(isDraggingScrollbar ? 200 : 120, Color.White)), ScrollbarThumbRect);
+                using (var track = new SolidBrush(Color.FromArgb(40, Color.White)))
+                    e.Graphics.FillRectangle(track, ScrollbarTrackRect);
+                using (var thumb = new SolidBrush(Color.FromArgb(isDraggingScrollbar ? 200 : 120, Color.White)))
+                    e.Graphics.FillRectangle(thumb, ScrollbarThumbRect);
             }
             else
             {
@@ -1650,26 +1705,17 @@ namespace FlowGrid
                 item.Open();
             }
 
-            if (selectedItem == entry.Path)
+            if (selectedItem == entry.Path || mouseOver)
             {
-                if (mouseOver)
-                {
-                    g.DrawRectangle(new Pen(Color.FromArgb(120, SystemColors.ActiveBorder)), outlineRectInner);
-                    g.FillRectangle(new SolidBrush(Color.FromArgb(100, SystemColors.GradientActiveCaption)), outlineRect);
-                }
-                else
-                {
-                    g.DrawRectangle(new Pen(Color.FromArgb(120, SystemColors.ActiveBorder)), outlineRectInner);
-                    g.FillRectangle(new SolidBrush(Color.FromArgb(80, SystemColors.GradientInactiveCaption)), outlineRect);
-                }
-            }
-            else
-            {
-                if (mouseOver)
-                {
-                    g.DrawRectangle(new Pen(Color.FromArgb(120, SystemColors.ActiveBorder)), outlineRectInner);
-                    g.FillRectangle(new SolidBrush(Color.FromArgb(80, SystemColors.ActiveCaption)), outlineRect);
-                }
+                var fillColor = selectedItem == entry.Path
+                    ? (mouseOver
+                        ? Color.FromArgb(100, SystemColors.GradientActiveCaption)
+                        : Color.FromArgb(80, SystemColors.GradientInactiveCaption))
+                    : Color.FromArgb(80, SystemColors.ActiveCaption);
+                using (var outline = new Pen(Color.FromArgb(120, SystemColors.ActiveBorder)))
+                    g.DrawRectangle(outline, outlineRectInner);
+                using (var fill = new SolidBrush(fillColor))
+                    g.FillRectangle(fill, outlineRect);
             }
 
             // Soft glow behind the hovered item.
@@ -1691,13 +1737,16 @@ namespace FlowGrid
             // Freshly added items get a short golden highlight.
             if (recentItems.ContainsKey(entry.Path))
             {
-                g.DrawRectangle(new Pen(Color.FromArgb(220, Color.Gold), 1.5f), outlineRectInner);
-                g.FillRectangle(new SolidBrush(Color.FromArgb(35, Color.Gold)), outlineRect);
+                using (var goldPen = new Pen(Color.FromArgb(220, Color.Gold), 1.5f))
+                    g.DrawRectangle(goldPen, outlineRectInner);
+                using (var goldFill = new SolidBrush(Color.FromArgb(35, Color.Gold)))
+                    g.FillRectangle(goldFill, outlineRect);
             }
 
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
             g.DrawIcon(icon, new Rectangle(x + itemWidth / 2 - iconSize / 2, y, iconSize, iconSize));
-            g.DrawString(name, iconFont, new SolidBrush(Color.FromArgb(180, 15, 15, 15)), new RectangleF(textPosition.Move(shadowDist, shadowDist), textMaxSize), stringFormat);
+            using (var textShadow = new SolidBrush(Color.FromArgb(180, 15, 15, 15)))
+                g.DrawString(name, iconFont, textShadow, new RectangleF(textPosition.Move(shadowDist, shadowDist), textMaxSize), stringFormat);
             g.DrawString(name, iconFont, Brushes.White, new RectangleF(textPosition, textMaxSize), stringFormat);
         }
 
@@ -1976,7 +2025,15 @@ namespace FlowGrid
 
         private void ThumbnailProvider_IconThumbnailLoaded(object sender, EventArgs e)
         {
-            Invalidate();
+            // Raised from a background task - marshal to the UI thread.
+            try
+            {
+                BeginInvoke((Action)Invalidate);
+            }
+            catch
+            {
+                // Window is closing.
+            }
         }
 
         private bool ItemExists(string path)

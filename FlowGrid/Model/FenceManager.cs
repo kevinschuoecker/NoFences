@@ -116,6 +116,36 @@ namespace FlowGrid.Model
             ShowFence(fenceInfo);
         }
 
+        /// <summary>
+        /// First-run experience: an empty fence to play with plus a sticky note
+        /// explaining the essentials, so a new user needs no manual.
+        /// </summary>
+        public void CreateWelcomeFences()
+        {
+            CreateFence("My first fence");
+
+            var note = new FenceInfo(Guid.NewGuid())
+            {
+                Name = "Welcome to FlowGrid",
+                FenceType = 1,
+                PosX = 430,
+                PosY = 250,
+                Width = 360,
+                Height = 300,
+                CustomColor = "#6B5900",
+                NoteText =
+                    "Welcome! The basics:\r\n\r\n" +
+                    "- Drag files from the desktop into a fence\r\n" +
+                    "- Double-click an item to open it\r\n" +
+                    "- Right-click a fence: colors, tabs, search, sorting, folder portals\r\n" +
+                    "- Ctrl+Alt+H hides all fences at once\r\n" +
+                    "- Tray icon: widgets, layout backup, autostart\r\n\r\n" +
+                    "You can delete this note anytime: right-click -> Remove fence."
+            };
+            UpdateFence(note);
+            ShowFence(note);
+        }
+
         public void CreatePluginFence(Sdk.IFlowGridWidget widget)
         {
             var fenceInfo = new FenceInfo(Guid.NewGuid())
